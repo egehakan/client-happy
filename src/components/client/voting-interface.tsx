@@ -530,7 +530,7 @@ export function VotingInterface({
                 onClick={() => handleVote("yes")}
               >
                 <ThumbsUp className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Yes</span>
+                <span className="sm:inline">Yes</span>
               </Button>
               <Button
                 variant={currentVote.vote === "mid" ? "default" : "outline"}
@@ -542,7 +542,7 @@ export function VotingInterface({
                 onClick={() => handleVote("mid")}
               >
                 <Minus className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">Maybe</span>
+                <span className="sm:inline">Maybe</span>
               </Button>
               <Button
                 variant={currentVote.vote === "no" ? "default" : "outline"}
@@ -554,7 +554,7 @@ export function VotingInterface({
                 onClick={() => handleVote("no")}
               >
                 <ThumbsDown className="h-5 w-5 sm:mr-2" />
-                <span className="hidden sm:inline">No</span>
+                <span className="sm:inline">No</span>
               </Button>
             </div>
 
