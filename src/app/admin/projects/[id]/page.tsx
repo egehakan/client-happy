@@ -7,10 +7,12 @@ import {
   type PageRow,
   type SectionRow,
   type ScreenshotRow,
+  type QuestionRow,
   projectFromRow,
   pageFromRow,
   sectionFromRow,
   screenshotFromRow,
+  questionFromRow,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +20,7 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { ProjectDetails } from "@/components/admin/project-details";
 import { PagesManager } from "@/components/admin/pages-manager";
 import { ScreenshotsManager } from "@/components/admin/screenshots-manager";
+import { QuestionnaireManager } from "@/components/admin/questionnaire-manager";
 import { CopyLinkButton } from "@/components/admin/copy-link-button";
 
 interface PageProps {
@@ -73,7 +76,16 @@ async function getProjectData(id: string) {
     })
   );
 
-  return { project, pages: pagesWithSections };
+  // Fetch questions
+  const questionsResult = await db.execute({
+    sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY scope_type, sort_order, created_at",
+    args: [id],
+  });
+  const questions = questionsResult.rows.map((r) =>
+    questionFromRow(r as unknown as QuestionRow)
+  );
+
+  return { project, pages: pagesWithSections, questions };
 }
 
 export default async function ProjectDetailPage({ params }: PageProps) {
@@ -82,7 +94,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
   if (!data) notFound();
 
-  const { project, pages } = data;
+  const { project, pages, questions } = data;
 
   return (
     <div>
@@ -118,6 +130,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
           <TabsTrigger value="details" className="text-xs sm:text-sm">Details</TabsTrigger>
           <TabsTrigger value="pages" className="text-xs sm:text-sm">Pages & Sections</TabsTrigger>
           <TabsTrigger value="screenshots" className="text-xs sm:text-sm">Screenshots</TabsTrigger>
+          <TabsTrigger value="questionnaire" className="text-xs sm:text-sm">Questionnaire</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details">
@@ -130,6 +143,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
         <TabsContent value="screenshots">
           <ScreenshotsManager projectId={project.id} pages={pages} />
+        </TabsContent>
+
+        <TabsContent value="questionnaire">
+          <QuestionnaireManager projectId={project.id} pages={pages} questions={questions} />
         </TabsContent>
       </Tabs>
     </div>

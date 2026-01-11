@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { type Project, type Page, type Section, type Screenshot } from "@/types";
+import { type Project, type Page, type Section, type Screenshot, type Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,9 +18,12 @@ import {
 } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { ThumbsUp, Minus, ThumbsDown, ChevronLeft, ChevronRight, Send } from "lucide-react";
+import { ThumbsUp, Minus, ThumbsDown, ChevronLeft, ChevronRight, Send, ArrowLeft } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { EmailEntry } from "@/components/client/email-entry";
+import { SelectionScreen } from "@/components/client/selection-screen";
+import { QuestionnaireInterface } from "@/components/client/questionnaire-interface";
 
 interface SectionWithScreenshots extends Section {
   screenshots: Screenshot[];
@@ -39,6 +42,9 @@ interface VotingInterfaceProps {
   project: Project;
   pages: PageWithSections[];
   screenshots: ScreenshotWithContext[];
+  questions?: Question[];
+  flatPages?: Page[];
+  sections?: Section[];
 }
 
 interface VoteState {
@@ -46,22 +52,97 @@ interface VoteState {
   comment: string;
 }
 
+type FlowState = "email" | "selection" | "voting" | "questionnaire";
+
 export function VotingInterface({
   project,
   screenshots,
+  questions = [],
+  flatPages = [],
+  sections = [],
 }: VotingInterfaceProps) {
   const router = useRouter();
+  const [voterEmail, setVoterEmail] = useState<string | null>(null);
+  const [flowState, setFlowState] = useState<FlowState>("email");
+  const [isLoadingVotes, setIsLoadingVotes] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [votes, setVotes] = useState<Record<string, VoteState>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const hasScreenshots = screenshots.length > 0;
+  const hasQuestions = questions.length > 0;
+
+  // Determine if we need selection screen
+  const needsSelectionScreen = hasScreenshots && hasQuestions;
+
   const currentScreenshot = screenshots[currentIndex];
-  const currentVote = votes[currentScreenshot.id] || { vote: null, comment: "" };
+  const currentVote = currentScreenshot
+    ? votes[currentScreenshot.id] || { vote: null, comment: "" }
+    : { vote: null, comment: "" };
 
   const votedCount = Object.values(votes).filter((v) => v.vote !== null).length;
-  const progress = (votedCount / screenshots.length) * 100;
+  const progress = screenshots.length > 0 ? (votedCount / screenshots.length) * 100 : 0;
+
+  async function handleEmailSubmit(email: string) {
+    setVoterEmail(email);
+
+    // If both screenshots and questions exist, show selection screen
+    if (needsSelectionScreen) {
+      setFlowState("selection");
+      return;
+    }
+
+    // Otherwise, go directly to the available feature
+    if (hasScreenshots) {
+      setFlowState("voting");
+      setIsLoadingVotes(true);
+      await loadExistingVotes(email);
+      setIsLoadingVotes(false);
+    } else if (hasQuestions) {
+      setFlowState("questionnaire");
+    }
+  }
+
+  async function loadExistingVotes(email: string) {
+    try {
+      const screenshotIds = screenshots.map((s) => s.id).join(",");
+      const response = await fetch(
+        `/api/votes/by-voter?voterIdentifier=${encodeURIComponent(email)}&screenshotIds=${encodeURIComponent(screenshotIds)}`
+      );
+
+      if (response.ok) {
+        const existingVotes = await response.json();
+        const votesRecord: Record<string, VoteState> = {};
+        for (const vote of existingVotes) {
+          votesRecord[vote.screenshotId] = {
+            vote: vote.vote,
+            comment: vote.comment || "",
+          };
+        }
+        setVotes(votesRecord);
+      }
+    } catch (err) {
+      console.error("Failed to fetch existing votes:", err);
+    }
+  }
+
+  async function handleSelectVoting() {
+    setFlowState("voting");
+    setIsLoadingVotes(true);
+    await loadExistingVotes(voterEmail!);
+    setIsLoadingVotes(false);
+  }
+
+  function handleSelectQuestionnaire() {
+    setFlowState("questionnaire");
+  }
+
+  function handleBackToSelection() {
+    setFlowState("selection");
+  }
 
   function handleVote(vote: "yes" | "mid" | "no") {
+    if (!currentScreenshot) return;
     setVotes((prev) => ({
       ...prev,
       [currentScreenshot.id]: {
@@ -73,6 +154,7 @@ export function VotingInterface({
   }
 
   function handleCommentChange(comment: string) {
+    if (!currentScreenshot) return;
     setVotes((prev) => ({
       ...prev,
       [currentScreenshot.id]: {
@@ -96,7 +178,6 @@ export function VotingInterface({
   }
 
   async function handleSubmit() {
-    // Check if all screenshots have been voted on
     const allVoted = screenshots.every(
       (s) => votes[s.id]?.vote !== null && votes[s.id]?.vote !== undefined
     );
@@ -118,7 +199,7 @@ export function VotingInterface({
       const response = await fetch("/api/votes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ votes: votesToSubmit }),
+        body: JSON.stringify({ votes: votesToSubmit, voterIdentifier: voterEmail }),
       });
 
       if (!response.ok) throw new Error("Failed to submit votes");
@@ -129,6 +210,56 @@ export function VotingInterface({
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  // Email entry state
+  if (flowState === "email") {
+    return <EmailEntry project={project} onEmailSubmit={handleEmailSubmit} />;
+  }
+
+  // Selection screen state
+  if (flowState === "selection" && voterEmail) {
+    return (
+      <SelectionScreen
+        project={project}
+        email={voterEmail}
+        hasScreenshots={hasScreenshots}
+        hasQuestions={hasQuestions}
+        onSelectVoting={handleSelectVoting}
+        onSelectQuestionnaire={handleSelectQuestionnaire}
+      />
+    );
+  }
+
+  // Questionnaire state
+  if (flowState === "questionnaire" && voterEmail) {
+    return (
+      <QuestionnaireInterface
+        project={project}
+        questions={questions}
+        pages={flatPages}
+        sections={sections}
+        email={voterEmail}
+        onBack={needsSelectionScreen ? handleBackToSelection : () => setFlowState("email")}
+      />
+    );
+  }
+
+  // Loading state for voting
+  if (isLoadingVotes) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="mt-4 text-sm text-muted-foreground">Loading your votes...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Voting interface
+  if (!currentScreenshot) {
+    return null;
   }
 
   return (
@@ -145,6 +276,9 @@ export function VotingInterface({
                 {project.description}
               </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              Voting as: {voterEmail}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -269,16 +403,29 @@ export function VotingInterface({
 
             {/* Navigation */}
             <div className="flex items-center justify-between gap-2 pt-2 sm:pt-4">
-              <Button
-                variant="outline"
-                onClick={goToPrevious}
-                disabled={currentIndex === 0}
-                size="sm"
-                className="sm:size-default"
-              >
-                <ChevronLeft className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Previous</span>
-              </Button>
+              <div className="flex gap-2">
+                {needsSelectionScreen && (
+                  <Button
+                    variant="ghost"
+                    onClick={handleBackToSelection}
+                    size="sm"
+                    className="sm:size-default"
+                  >
+                    <ArrowLeft className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Back</span>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={goToPrevious}
+                  disabled={currentIndex === 0}
+                  size="sm"
+                  className="sm:size-default"
+                >
+                  <ChevronLeft className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Previous</span>
+                </Button>
+              </div>
 
               {currentIndex === screenshots.length - 1 ? (
                 <Button

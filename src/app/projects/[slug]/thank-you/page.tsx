@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -10,13 +8,7 @@ import {
 import { CheckCircle } from "lucide-react";
 import { Logo } from "@/components/logo";
 
-interface PageProps {
-  params: Promise<{ slug: string }>;
-}
-
-export default async function ThankYouPage({ params }: PageProps) {
-  const { slug } = await params;
-
+export default function ThankYouPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <Card className="max-w-md text-center">
@@ -32,16 +24,11 @@ export default async function ThankYouPage({ params }: PageProps) {
             Your feedback has been submitted successfully.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           <p className="text-sm text-muted-foreground">
             We appreciate you taking the time to share your style preferences.
             Your input will help us create a design that matches your vision.
           </p>
-          <div className="pt-4">
-            <Link href={`/projects/${slug}`}>
-              <Button variant="outline">Submit Another Response</Button>
-            </Link>
-          </div>
         </CardContent>
       </Card>
     </div>

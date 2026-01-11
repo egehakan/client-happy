@@ -220,3 +220,106 @@ export function voteFromRow(row: VoteRow): Vote {
     createdAt: row.created_at,
   };
 }
+
+// Question types
+export type QuestionFieldType =
+  | "text"
+  | "textarea"
+  | "select"
+  | "file"
+  | "checkbox"
+  | "date"
+  | "color"
+  | "url";
+
+export type QuestionScopeType = "website" | "page" | "section";
+
+export interface Question {
+  id: string;
+  projectId: string;
+  scopeType: QuestionScopeType;
+  scopeId: string | null;
+  fieldType: QuestionFieldType;
+  label: string;
+  description: string | null;
+  placeholder: string | null;
+  options: string[] | null;
+  isRequired: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuestionResponse {
+  id: string;
+  questionId: string;
+  respondentEmail: string;
+  value: string | null;
+  filePath: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Question row types (snake_case from SQLite)
+export interface QuestionRow {
+  id: string;
+  project_id: string;
+  scope_type: QuestionScopeType;
+  scope_id: string | null;
+  field_type: QuestionFieldType;
+  label: string;
+  description: string | null;
+  placeholder: string | null;
+  options: string | null;
+  is_required: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionResponseRow {
+  id: string;
+  question_id: string;
+  respondent_email: string;
+  value: string | null;
+  file_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Question converter functions
+export function questionFromRow(row: QuestionRow): Question {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    fieldType: row.field_type,
+    label: row.label,
+    description: row.description,
+    placeholder: row.placeholder,
+    options: row.options ? JSON.parse(row.options) : null,
+    isRequired: row.is_required === 1,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function questionResponseFromRow(row: QuestionResponseRow): QuestionResponse {
+  return {
+    id: row.id,
+    questionId: row.question_id,
+    respondentEmail: row.respondent_email,
+    value: row.value,
+    filePath: row.file_path,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// Extended types for questionnaire display
+export interface QuestionWithScope extends Question {
+  scopeName?: string;
+  pageName?: string;
+}

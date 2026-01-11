@@ -58,3 +58,14 @@ export async function userOwnsScreenshot(userId: string, screenshotId: string): 
   });
   return result.rows.length > 0;
 }
+
+// Check if user owns a question (through project)
+export async function userOwnsQuestion(userId: string, questionId: string): Promise<boolean> {
+  const result = await db.execute({
+    sql: `SELECT q.id FROM questions q
+          JOIN projects p ON q.project_id = p.id
+          WHERE q.id = ? AND p.user_id = ?`,
+    args: [questionId, userId],
+  });
+  return result.rows.length > 0;
+}

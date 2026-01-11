@@ -89,7 +89,7 @@ export const submitVotesSchema = z.object({
       comment: z.string().max(1000).optional(),
     })
   ),
-  voterIdentifier: z.string().max(100).optional(),
+  voterIdentifier: z.string().email("Please enter a valid email address"),
 });
 
 // Auth validators
@@ -118,6 +118,74 @@ export const resendVerificationSchema = z.object({
   email: z.string().email("Invalid email address"),
 });
 
+// Question field types
+export const questionFieldTypes = z.enum([
+  "text",
+  "textarea",
+  "select",
+  "file",
+  "checkbox",
+  "date",
+  "color",
+  "url",
+]);
+
+export const questionScopeTypes = z.enum(["website", "page", "section"]);
+
+// Create question schema
+export const createQuestionSchema = z
+  .object({
+    projectId: z.string().min(1, "Project ID is required"),
+    scopeType: questionScopeTypes,
+    scopeId: z.string().optional().nullable(),
+    fieldType: questionFieldTypes,
+    label: z.string().min(1, "Label is required").max(200),
+    description: z.string().max(500).optional(),
+    placeholder: z.string().max(200).optional(),
+    options: z.array(z.string().min(1).max(100)).optional(),
+    isRequired: z.boolean().default(false),
+  })
+  .refine(
+    (data) => {
+      if (data.scopeType === "page" || data.scopeType === "section") {
+        return !!data.scopeId;
+      }
+      return true;
+    },
+    { message: "scopeId is required for page and section scopes", path: ["scopeId"] }
+  )
+  .refine(
+    (data) => {
+      if (data.fieldType === "select" || data.fieldType === "checkbox") {
+        return data.options && data.options.length > 0;
+      }
+      return true;
+    },
+    { message: "Options are required for select and checkbox field types", path: ["options"] }
+  );
+
+// Update question schema
+export const updateQuestionSchema = z.object({
+  label: z.string().min(1).max(200).optional(),
+  description: z.string().max(500).nullable().optional(),
+  placeholder: z.string().max(200).nullable().optional(),
+  options: z.array(z.string().min(1).max(100)).nullable().optional(),
+  isRequired: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+// Submit questionnaire response schema
+export const submitQuestionnaireSchema = z.object({
+  responses: z.array(
+    z.object({
+      questionId: z.string().min(1),
+      value: z.string().max(10000).optional().nullable(),
+      filePath: z.string().optional().nullable(),
+    })
+  ),
+  respondentEmail: z.string().email("Please enter a valid email address"),
+});
+
 // Type exports
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
@@ -132,3 +200,6 @@ export type SubmitVotesInput = z.infer<typeof submitVotesSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
+export type CreateQuestionInput = z.infer<typeof createQuestionSchema>;
+export type UpdateQuestionInput = z.infer<typeof updateQuestionSchema>;
+export type SubmitQuestionnaireInput = z.infer<typeof submitQuestionnaireSchema>;

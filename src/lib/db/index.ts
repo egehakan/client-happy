@@ -140,4 +140,49 @@ export async function initializeSchema(): Promise<void> {
   } catch {
     // Index might already exist
   }
+
+  // Migration: Create questions table
+  try {
+    await db.execute("SELECT id FROM questions LIMIT 1");
+  } catch {
+    await db.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS questions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        scope_type TEXT NOT NULL CHECK (scope_type IN ('website', 'page', 'section')),
+        scope_id TEXT,
+        field_type TEXT NOT NULL CHECK (field_type IN ('text', 'textarea', 'select', 'file', 'checkbox', 'date', 'color', 'url')),
+        label TEXT NOT NULL,
+        description TEXT,
+        placeholder TEXT,
+        options TEXT,
+        is_required INTEGER DEFAULT 0,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_questions_project_id ON questions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_questions_scope ON questions(scope_type, scope_id);
+    `);
+  }
+
+  // Migration: Create question_responses table
+  try {
+    await db.execute("SELECT id FROM question_responses LIMIT 1");
+  } catch {
+    await db.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS question_responses (
+        id TEXT PRIMARY KEY,
+        question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+        respondent_email TEXT NOT NULL,
+        value TEXT,
+        file_path TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(question_id, respondent_email)
+      );
+      CREATE INDEX IF NOT EXISTS idx_question_responses_question_id ON question_responses(question_id);
+      CREATE INDEX IF NOT EXISTS idx_question_responses_email ON question_responses(respondent_email);
+    `);
+  }
 }

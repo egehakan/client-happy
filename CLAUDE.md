@@ -64,4 +64,13 @@ This is a local-only client style understanding tool. Key points:
 - Use nanoid for generating IDs
 - Use Zod validators from lib/validators/ for input validation
 - Type interfaces in types/index.ts with row converters
+
+Multi-User Security Requirements
+- All admin pages MUST verify user authentication via `auth()` from `@/lib/auth`
+- All database queries for admin pages MUST filter by `user_id` to ensure users only see their own data
+- Use `WHERE user_id = ?` for direct project queries
+- Use `AND p.user_id = ?` when joining through projects table
+- For API routes, use helper functions from `@/lib/auth/api-auth.ts` (e.g., `userOwnsProject`, `userOwnsQuestion`)
+- Always redirect to `/login` if session is missing: `if (!session?.user) redirect("/login")`
+- Public routes (/projects/[slug]) do NOT require auth - they are accessed by clients via shared links
   

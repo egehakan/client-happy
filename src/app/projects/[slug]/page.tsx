@@ -6,10 +6,12 @@ import {
   type PageRow,
   type SectionRow,
   type ScreenshotRow,
+  type QuestionRow,
   projectFromRow,
   pageFromRow,
   sectionFromRow,
   screenshotFromRow,
+  questionFromRow,
 } from "@/types";
 import { VotingInterface } from "@/components/client/voting-interface";
 
@@ -66,7 +68,29 @@ async function getProjectBySlug(slug: string) {
     })
   );
 
-  return { project, pages: pagesWithSections };
+  // Fetch questions
+  const questionsResult = await db.execute({
+    sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY scope_type, sort_order, created_at",
+    args: [project.id],
+  });
+  const questions = questionsResult.rows.map((r) =>
+    questionFromRow(r as unknown as QuestionRow)
+  );
+
+  // Flatten sections for questionnaire
+  const allSections = pagesWithSections.flatMap((page) =>
+    page.sections.map((section) => ({
+      id: section.id,
+      pageId: page.id,
+      name: section.name,
+      description: section.description,
+      sortOrder: section.sortOrder,
+      createdAt: section.createdAt,
+      updatedAt: section.updatedAt,
+    }))
+  );
+
+  return { project, pages: pagesWithSections, questions, sections: allSections };
 }
 
 export default async function ClientVotingPage({ params }: PageProps) {
@@ -75,7 +99,7 @@ export default async function ClientVotingPage({ params }: PageProps) {
 
   if (!data) notFound();
 
-  const { project, pages } = data;
+  const { project, pages, questions, sections } = data;
 
   // Flatten all screenshots for voting
   const allScreenshots = pages.flatMap((page) =>
@@ -88,13 +112,25 @@ export default async function ClientVotingPage({ params }: PageProps) {
     )
   );
 
-  if (allScreenshots.length === 0) {
+  // Flatten pages for questionnaire (without sections/screenshots)
+  const flatPages = pages.map((page) => ({
+    id: page.id,
+    projectId: page.projectId,
+    name: page.name,
+    description: page.description,
+    sortOrder: page.sortOrder,
+    createdAt: page.createdAt,
+    updatedAt: page.updatedAt,
+  }));
+
+  // If no screenshots and no questions, show a message
+  if (allScreenshots.length === 0 && questions.length === 0) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
         <div className="text-center">
           <h1 className="text-xl font-bold sm:text-2xl">{project.name}</h1>
           <p className="mt-2 text-sm text-muted-foreground sm:text-base">
-            No screenshots available for voting yet.
+            No content available yet.
           </p>
         </div>
       </div>
@@ -106,6 +142,9 @@ export default async function ClientVotingPage({ params }: PageProps) {
       project={project}
       pages={pages}
       screenshots={allScreenshots}
+      questions={questions}
+      flatPages={flatPages}
+      sections={sections}
     />
   );
 }

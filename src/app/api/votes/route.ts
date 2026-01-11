@@ -91,6 +91,14 @@ export async function POST(request: Request) {
       const { votes, voterIdentifier } = result.data;
       const insertedVotes: VoteRow[] = [];
 
+      // Delete existing votes for this voter on these screenshots (allows overwriting)
+      for (const v of votes) {
+        await db.execute({
+          sql: "DELETE FROM votes WHERE screenshot_id = ? AND voter_identifier = ?",
+          args: [v.screenshotId, voterIdentifier],
+        });
+      }
+
       // Insert votes one by one (Turso doesn't support transactions the same way)
       for (const v of votes) {
         const id = nanoid();
