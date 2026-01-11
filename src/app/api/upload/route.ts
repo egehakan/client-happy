@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { put } from "@vercel/blob";
 import { nanoid } from "nanoid";
 
 const ALLOWED_TYPES = [
@@ -46,28 +45,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create project uploads directory if it doesn't exist
-    const uploadDir = join(process.cwd(), "public", "uploads", projectId);
-    await mkdir(uploadDir, { recursive: true });
-
-    // Generate unique filename
+    // Generate unique filename with project prefix
     const ext = file.name.split(".").pop() || "png";
-    const filename = `${nanoid()}.${ext}`;
-    const filePath = join(uploadDir, filename);
+    const filename = `${projectId}/${nanoid()}.${ext}`;
 
-    // Write file
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
-
-    // Return relative path for storage in database
-    const relativePath = `/uploads/${projectId}/${filename}`;
+    // Upload to Vercel Blob
+    const blob = await put(filename, file, {
+      access: "public",
+      addRandomSuffix: false,
+    });
 
     return NextResponse.json({
-      filePath: relativePath,
-      filename,
+      filePath: blob.url,
+      filename: blob.pathname,
       size: file.size,
       type: file.type,
+      url: blob.url,
     });
   } catch (error) {
     console.error("Failed to upload file:", error);

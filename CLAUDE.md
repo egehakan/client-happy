@@ -56,7 +56,7 @@
 
 Project-Specific Instructions
 This is a local-only client style understanding tool. Key points:
-- Database: SQLite with better-sqlite3 (data.db in project root)
+- Database: Turso
 - NOT deployed - runs locally on Mac only
 - File uploads stored in public/uploads/[project-id]/
 - Routes: /admin/* for management, /projects/[slug] for client voting

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { type InValue } from "@libsql/client";
-import { unlink } from "fs/promises";
-import { join } from "path";
+import { del } from "@vercel/blob";
 import { db, initializeSchema } from "@/lib/db";
 import { updateScreenshotSchema } from "@/lib/validators";
 import { type ScreenshotRow, screenshotFromRow } from "@/types";
@@ -123,13 +122,12 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
 
     const row = existing.rows[0] as unknown as ScreenshotRow;
 
-    // Delete local file if exists
+    // Delete from Vercel Blob if it's a local upload (stored as blob URL)
     if (row.source_type === "local" && row.file_path) {
       try {
-        const filePath = join(process.cwd(), "public", row.file_path);
-        await unlink(filePath);
+        await del(row.file_path);
       } catch {
-        // File may not exist, ignore error
+        // Blob may not exist or already deleted, ignore error
       }
     }
 
