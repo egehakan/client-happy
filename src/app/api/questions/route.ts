@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { projectId, scopeType, scopeId, fieldType, label, description, placeholder, options, isRequired } = result.data;
+    const { projectId, scopeType, scopeId, fieldType, label, description, placeholder, options, isRequired, maxFileCount } = result.data;
     const id = nanoid();
 
     // Verify ownership
@@ -80,8 +80,8 @@ export async function POST(request: Request) {
     const maxOrder = (maxOrderResult.rows[0] as unknown as { max_order: number }).max_order;
 
     await db.execute({
-      sql: `INSERT INTO questions (id, project_id, scope_type, scope_id, field_type, label, description, placeholder, options, is_required, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO questions (id, project_id, scope_type, scope_id, field_type, label, description, placeholder, options, is_required, max_file_count, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         projectId,
@@ -93,6 +93,7 @@ export async function POST(request: Request) {
         placeholder ?? null,
         options ? JSON.stringify(options) : null,
         isRequired ? 1 : 0,
+        fieldType === "file" ? (maxFileCount ?? 1) : 1,
         maxOrder + 1,
       ],
     });

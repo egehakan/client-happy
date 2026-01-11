@@ -49,6 +49,7 @@ interface SectionWithScreenshots extends Section {
 
 interface PageWithSections extends Page {
   sections: SectionWithScreenshots[];
+  screenshots?: Screenshot[]; // Page-level screenshots
 }
 
 interface ScreenshotsManagerProps {
@@ -66,7 +67,7 @@ export function ScreenshotsManager({
   const [selectedPageId, setSelectedPageId] = useState<string>(
     pages[0]?.id || ""
   );
-  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("__page__");
   const [isAddingOpen, setIsAddingOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -83,24 +84,20 @@ export function ScreenshotsManager({
 
   const selectedPage = pages.find((p) => p.id === selectedPageId);
   const sections = selectedPage?.sections || [];
+  const pageScreenshots = selectedPage?.screenshots || [];
 
   function resetForm() {
     setTitle("");
     setDescription("");
     setExternalUrl("");
     setSelectedFile(null);
-    setSelectedSectionId("");
+    setSelectedSectionId("__page__");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }
 
   async function handleAddScreenshot(sourceType: "local" | "url") {
-    if (!selectedSectionId) {
-      toast.error("Please select a section");
-      return;
-    }
-
     if (sourceType === "url" && !externalUrl) {
       toast.error("Please enter an image URL");
       return;
@@ -136,12 +133,14 @@ export function ScreenshotsManager({
         filePath = uploadData.filePath;
       }
 
-      // Create screenshot record
+      // Create screenshot record - either to section or directly to page
+      const isPageLevel = selectedSectionId === "__page__";
       const response = await fetch("/api/screenshots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sectionId: selectedSectionId,
+          sectionId: isPageLevel ? null : selectedSectionId,
+          pageId: isPageLevel ? selectedPageId : null,
           title: title || undefined,
           description: description || undefined,
           sourceType,
@@ -189,12 +188,77 @@ export function ScreenshotsManager({
     }
   }
 
+  function renderScreenshotGrid(screenshots: Screenshot[]) {
+    if (screenshots.length === 0) {
+      return (
+        <div className="rounded-lg border border-dashed p-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            No screenshots in this section
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {screenshots.map((screenshot) => (
+          <div
+            key={screenshot.id}
+            className="group relative overflow-hidden rounded-lg border"
+          >
+            <div className="relative aspect-video bg-muted">
+              {screenshot.sourceType === "local" && screenshot.filePath ? (
+                <Image
+                  src={screenshot.filePath}
+                  alt={screenshot.title || "Screenshot"}
+                  fill
+                  className="object-cover"
+                />
+              ) : screenshot.externalUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={screenshot.externalUrl}
+                  alt={screenshot.title || "Screenshot"}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                </div>
+              )}
+            </div>
+            <div className="p-3">
+              <div className="flex items-start justify-between">
+                <p className="font-medium">
+                  {screenshot.title || "Untitled"}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 opacity-0 group-hover:opacity-100"
+                  onClick={() => setDeleteScreenshot(screenshot)}
+                >
+                  <Trash className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+              {screenshot.description && (
+                <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                  {screenshot.description}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (pages.length === 0) {
     return (
       <Card>
         <CardContent className="py-12 text-center">
           <p className="text-muted-foreground">
-            Create pages and sections first before adding screenshots
+            Create pages first before adding screenshots
           </p>
         </CardContent>
       </Card>
@@ -204,118 +268,71 @@ export function ScreenshotsManager({
   return (
     <>
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Screenshots</CardTitle>
-            <CardDescription>
-              Add screenshot examples for clients to vote on
-            </CardDescription>
-          </div>
-          <Button size="sm" onClick={() => setIsAddingOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Screenshot
-          </Button>
+        <CardHeader>
+          <CardTitle>Screenshots</CardTitle>
+          <CardDescription>
+            Add screenshot examples for clients to vote on
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-6">
-            <Label className="mb-2 block">Filter by Page</Label>
-            <Select value={selectedPageId} onValueChange={setSelectedPageId}>
-              <SelectTrigger className="w-64">
-                <SelectValue placeholder="Select page" />
-              </SelectTrigger>
-              <SelectContent>
-                {pages.map((page) => (
-                  <SelectItem key={page.id} value={page.id}>
-                    {page.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <Label className="mb-2 block">Page</Label>
+              <Select value={selectedPageId} onValueChange={setSelectedPageId}>
+                <SelectTrigger className="w-full sm:w-64">
+                  <SelectValue placeholder="Select page" />
+                </SelectTrigger>
+                <SelectContent>
+                  {pages.map((page) => (
+                    <SelectItem key={page.id} value={page.id}>
+                      {page.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button size="sm" onClick={() => setIsAddingOpen(true)} className="w-full sm:w-auto">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Screenshot
+            </Button>
           </div>
 
-          {sections.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-12 text-center">
-              <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <p className="mt-4 text-muted-foreground">No sections in this page</p>
-              <p className="text-sm text-muted-foreground">
-                Add sections first in the Pages & Sections tab
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {sections.map((section) => (
+          <div className="space-y-8">
+            {/* Page-level screenshots */}
+            {pageScreenshots.length > 0 && (
+              <div>
+                <h3 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wide border-b pb-2">
+                  Page Screenshots (No Section)
+                </h3>
+                {renderScreenshotGrid(pageScreenshots)}
+              </div>
+            )}
+
+            {/* Section screenshots */}
+            {sections.length === 0 && pageScreenshots.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-12 text-center">
+                <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                <p className="mt-4 text-muted-foreground">No screenshots yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Add screenshots directly to this page or create sections first
+                </p>
+              </div>
+            ) : (
+              sections.map((section) => (
                 <div key={section.id}>
                   <h3 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wide border-b pb-2">
                     {section.name}
                   </h3>
-                  {section.screenshots.length === 0 ? (
-                    <div className="rounded-lg border border-dashed p-8 text-center">
-                      <p className="text-sm text-muted-foreground">
-                        No screenshots in this section
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                      {section.screenshots.map((screenshot) => (
-                        <div
-                          key={screenshot.id}
-                          className="group relative overflow-hidden rounded-lg border"
-                        >
-                          <div className="relative aspect-video bg-muted">
-                            {screenshot.sourceType === "local" &&
-                            screenshot.filePath ? (
-                              <Image
-                                src={screenshot.filePath}
-                                alt={screenshot.title || "Screenshot"}
-                                fill
-                                className="object-cover"
-                              />
-                            ) : screenshot.externalUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={screenshot.externalUrl}
-                                alt={screenshot.title || "Screenshot"}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-full items-center justify-center">
-                                <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="p-3">
-                            <div className="flex items-start justify-between">
-                              <p className="font-medium">
-                                {screenshot.title || "Untitled"}
-                              </p>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 opacity-0 group-hover:opacity-100"
-                                onClick={() => setDeleteScreenshot(screenshot)}
-                              >
-                                <Trash className="h-4 w-4 text-muted-foreground" />
-                              </Button>
-                            </div>
-                            {screenshot.description && (
-                              <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                                {screenshot.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {renderScreenshotGrid(section.screenshots)}
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </CardContent>
-      </Card>
+      </Card >
 
       {/* Add Screenshot Dialog */}
-      <Dialog open={isAddingOpen} onOpenChange={setIsAddingOpen}>
+      < Dialog open={isAddingOpen} onOpenChange={setIsAddingOpen} >
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Screenshot</DialogTitle>
@@ -326,27 +343,32 @@ export function ScreenshotsManager({
 
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
-              <Label>Section</Label>
+              <Label>Location</Label>
               <Select
                 value={selectedSectionId}
                 onValueChange={setSelectedSectionId}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select section" />
+                  <SelectValue placeholder="Select location" />
                 </SelectTrigger>
                 <SelectContent>
-                  {sections.map((section) => (
-                    <SelectItem key={section.id} value={section.id}>
-                      {section.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="__page__">
+                    📄 Page (no section)
+                  </SelectItem>
+                  {sections.length > 0 && (
+                    <>
+                      <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                        Sections
+                      </div>
+                      {sections.map((section) => (
+                        <SelectItem key={section.id} value={section.id}>
+                          📁 {section.name}
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
                 </SelectContent>
               </Select>
-              {sections.length === 0 && (
-                <p className="text-xs text-destructive">
-                  No sections available. Add sections to this page first.
-                </p>
-              )}
             </div>
 
             <div className="space-y-2">
@@ -394,7 +416,7 @@ export function ScreenshotsManager({
                 <Button
                   className="w-full"
                   onClick={() => handleAddScreenshot("local")}
-                  disabled={isSubmitting || !selectedFile || !selectedSectionId}
+                  disabled={isSubmitting || !selectedFile}
                 >
                   {isSubmitting ? "Uploading..." : "Upload Screenshot"}
                 </Button>
@@ -411,7 +433,7 @@ export function ScreenshotsManager({
                 <Button
                   className="w-full"
                   onClick={() => handleAddScreenshot("url")}
-                  disabled={isSubmitting || !externalUrl || !selectedSectionId}
+                  disabled={isSubmitting || !externalUrl}
                 >
                   {isSubmitting ? "Adding..." : "Add Screenshot"}
                 </Button>
@@ -419,11 +441,12 @@ export function ScreenshotsManager({
             </Tabs>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog >
 
       {/* Delete Confirmation */}
-      <AlertDialog
-        open={deleteScreenshot !== null}
+      < AlertDialog
+        open={deleteScreenshot !== null
+        }
         onOpenChange={() => setDeleteScreenshot(null)}
       >
         <AlertDialogContent>
@@ -445,7 +468,7 @@ export function ScreenshotsManager({
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog >
     </>
   );
 }

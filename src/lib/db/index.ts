@@ -185,4 +185,80 @@ export async function initializeSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_question_responses_email ON question_responses(respondent_email);
     `);
   }
+
+  // Migration: Add max_file_count column to questions table
+  try {
+    await db.execute("SELECT max_file_count FROM questions LIMIT 1");
+  } catch {
+    await db.execute("ALTER TABLE questions ADD COLUMN max_file_count INTEGER DEFAULT 1");
+  }
+
+  // Migration: Add page_id column to screenshots for page-level screenshots
+  try {
+    await db.execute("SELECT page_id FROM screenshots LIMIT 1");
+  } catch {
+    await db.execute("ALTER TABLE screenshots ADD COLUMN page_id TEXT REFERENCES pages(id) ON DELETE CASCADE");
+  }
+
+  // Create index for screenshots.page_id
+  try {
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_page_id ON screenshots(page_id)");
+  } catch {
+    // Index might already exist
+  }
+
+  // Migration: Make section_id nullable in screenshots table
+  // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+  try {
+    // Check if migration is needed by trying to insert a row with NULL section_id
+    // If this fails with NOT NULL constraint, we need to migrate
+    const testResult = await db.execute({
+      sql: "SELECT sql FROM sqlite_master WHERE type='table' AND name='screenshots'",
+      args: [],
+    });
+    const createSql = (testResult.rows[0] as unknown as { sql: string })?.sql || "";
+
+    // Only migrate if section_id is still NOT NULL
+    if (createSql.includes("section_id TEXT NOT NULL")) {
+      console.log("Migrating screenshots table to allow nullable section_id...");
+
+      // Create new table with nullable section_id
+      await db.execute(`
+        CREATE TABLE screenshots_new (
+          id TEXT PRIMARY KEY,
+          section_id TEXT REFERENCES sections(id) ON DELETE CASCADE,
+          page_id TEXT REFERENCES pages(id) ON DELETE CASCADE,
+          title TEXT,
+          description TEXT,
+          source_type TEXT NOT NULL CHECK (source_type IN ('local', 'url')),
+          file_path TEXT,
+          external_url TEXT,
+          sort_order INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      `);
+
+      // Copy data from old table
+      await db.execute(`
+        INSERT INTO screenshots_new (id, section_id, page_id, title, description, source_type, file_path, external_url, sort_order, created_at, updated_at)
+        SELECT id, section_id, page_id, title, description, source_type, file_path, external_url, sort_order, created_at, updated_at
+        FROM screenshots
+      `);
+
+      // Drop old table
+      await db.execute("DROP TABLE screenshots");
+
+      // Rename new table
+      await db.execute("ALTER TABLE screenshots_new RENAME TO screenshots");
+
+      // Recreate indexes
+      await db.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_section_id ON screenshots(section_id)");
+      await db.execute("CREATE INDEX IF NOT EXISTS idx_screenshots_page_id ON screenshots(page_id)");
+
+      console.log("Screenshots table migration complete.");
+    }
+  } catch (migrationError) {
+    console.error("Screenshots table migration check/run failed:", migrationError);
+  }
 }

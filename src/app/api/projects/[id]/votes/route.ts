@@ -20,14 +20,14 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Count votes before deletion
+    // Count votes before deletion (includes both section-level and page-level screenshots)
     const countResult = await db.execute({
       sql: `
         SELECT COUNT(*) as count FROM votes
         WHERE screenshot_id IN (
           SELECT s.id FROM screenshots s
-          JOIN sections sec ON s.section_id = sec.id
-          JOIN pages p ON sec.page_id = p.id
+          LEFT JOIN sections sec ON s.section_id = sec.id
+          LEFT JOIN pages p ON sec.page_id = p.id OR s.page_id = p.id
           WHERE p.project_id = ?
         )
       `,
@@ -35,14 +35,14 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     });
     const deletedCount = (countResult.rows[0] as unknown as { count: number }).count;
 
-    // Delete all votes for screenshots in this project
+    // Delete all votes for screenshots in this project (includes both section-level and page-level screenshots)
     await db.execute({
       sql: `
         DELETE FROM votes
         WHERE screenshot_id IN (
           SELECT s.id FROM screenshots s
-          JOIN sections sec ON s.section_id = sec.id
-          JOIN pages p ON sec.page_id = p.id
+          LEFT JOIN sections sec ON s.section_id = sec.id
+          LEFT JOIN pages p ON sec.page_id = p.id OR s.page_id = p.id
           WHERE p.project_id = ?
         )
       `,

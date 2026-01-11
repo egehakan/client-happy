@@ -172,7 +172,7 @@ export function PagesManager({ projectId, pages }: PagesManagerProps) {
     <>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <div>
+          <div className="gap-2 flex flex-col">
             <CardTitle>Pages & Sections</CardTitle>
             <CardDescription>
               Organize your project into pages and sections

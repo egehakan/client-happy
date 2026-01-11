@@ -48,7 +48,8 @@ export const updateSectionSchema = z.object({
 // Screenshot validators
 export const createScreenshotSchema = z
   .object({
-    sectionId: z.string().min(1, "Section ID is required"),
+    sectionId: z.string().min(1).optional().nullable(),
+    pageId: z.string().min(1).optional().nullable(),
     title: z.string().max(100).optional(),
     description: z.string().max(500).optional(),
     sourceType: z.enum(["local", "url"]),
@@ -63,6 +64,15 @@ export const createScreenshotSchema = z
     },
     {
       message: "Either filePath or externalUrl must be provided based on sourceType",
+    }
+  )
+  .refine(
+    (data) => {
+      // Must have either sectionId or pageId (but not both)
+      return (!!data.sectionId && !data.pageId) || (!data.sectionId && !!data.pageId);
+    },
+    {
+      message: "Either sectionId or pageId must be provided (but not both)",
     }
   );
 
@@ -144,6 +154,7 @@ export const createQuestionSchema = z
     placeholder: z.string().max(200).optional(),
     options: z.array(z.string().min(1).max(100)).optional(),
     isRequired: z.boolean().default(false),
+    maxFileCount: z.number().int().min(1).max(20).default(1),
   })
   .refine(
     (data) => {
@@ -171,6 +182,7 @@ export const updateQuestionSchema = z.object({
   placeholder: z.string().max(200).nullable().optional(),
   options: z.array(z.string().min(1).max(100)).nullable().optional(),
   isRequired: z.boolean().optional(),
+  maxFileCount: z.number().int().min(1).max(20).optional(),
   sortOrder: z.number().int().min(0).optional(),
 });
 

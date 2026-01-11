@@ -79,6 +79,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       updates.push("is_required = ?");
       args.push(result.data.isRequired ? 1 : 0);
     }
+    if (result.data.maxFileCount !== undefined) {
+      updates.push("max_file_count = ?");
+      args.push(result.data.maxFileCount);
+    }
     if (result.data.sortOrder !== undefined) {
       updates.push("sort_order = ?");
       args.push(result.data.sortOrder);

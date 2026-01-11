@@ -39,7 +39,8 @@ export interface Section {
 
 export interface Screenshot {
   id: string;
-  sectionId: string;
+  sectionId: string | null;
+  pageId: string | null;
   title: string | null;
   description: string | null;
   sourceType: "local" | "url";
@@ -127,7 +128,8 @@ export interface SectionRow {
 
 export interface ScreenshotRow {
   id: string;
-  section_id: string;
+  section_id: string | null;
+  page_id: string | null;
   title: string | null;
   description: string | null;
   source_type: "local" | "url";
@@ -199,6 +201,7 @@ export function screenshotFromRow(row: ScreenshotRow): Screenshot {
   return {
     id: row.id,
     sectionId: row.section_id,
+    pageId: row.page_id,
     title: row.title,
     description: row.description,
     sourceType: row.source_type,
@@ -245,6 +248,7 @@ export interface Question {
   placeholder: string | null;
   options: string[] | null;
   isRequired: boolean;
+  maxFileCount: number;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -272,6 +276,7 @@ export interface QuestionRow {
   placeholder: string | null;
   options: string | null;
   is_required: number;
+  max_file_count: number | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -300,6 +305,7 @@ export function questionFromRow(row: QuestionRow): Question {
     placeholder: row.placeholder,
     options: row.options ? JSON.parse(row.options) : null,
     isRequired: row.is_required === 1,
+    maxFileCount: row.max_file_count ?? 1,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

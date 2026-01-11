@@ -113,6 +113,7 @@ export function QuestionnaireManager({
   const [options, setOptions] = useState<string[]>([]);
   const [newOption, setNewOption] = useState("");
   const [isRequired, setIsRequired] = useState(false);
+  const [maxFileCount, setMaxFileCount] = useState(1);
 
   // Delete state
   const [deleteQuestion, setDeleteQuestion] = useState<Question | null>(null);
@@ -143,6 +144,7 @@ export function QuestionnaireManager({
     setOptions([]);
     setNewOption("");
     setIsRequired(false);
+    setMaxFileCount(1);
   }
 
   function addOption() {
@@ -190,6 +192,7 @@ export function QuestionnaireManager({
           placeholder: placeholder || undefined,
           options: options.length > 0 ? options : undefined,
           isRequired,
+          maxFileCount: fieldType === "file" ? maxFileCount : 1,
         }),
       });
 
@@ -255,6 +258,11 @@ export function QuestionnaireManager({
             <Badge variant="outline" className="text-xs">
               {getFieldTypeIcon(question.fieldType)}
             </Badge>
+            {question.fieldType === "file" && question.maxFileCount > 1 && (
+              <Badge variant="secondary" className="text-xs">
+                Up to {question.maxFileCount} files
+              </Badge>
+            )}
             {question.description && (
               <span className="text-xs text-muted-foreground truncate">
                 {question.description}
@@ -277,251 +285,278 @@ export function QuestionnaireManager({
   return (
     <>
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Questionnaire</CardTitle>
-            <CardDescription>
-              Create questions to gather information from clients
-            </CardDescription>
-          </div>
-          <Dialog open={isAddingQuestion} onOpenChange={setIsAddingQuestion}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Question
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Add New Question</DialogTitle>
-                <DialogDescription>
-                  Create a question for clients to answer
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                {/* Scope Selection */}
-                <div className="space-y-2">
-                  <Label>Scope</Label>
-                  <Select
-                    value={scopeType}
-                    onValueChange={(value: QuestionScopeType) => {
-                      setScopeType(value);
-                      setScopeId("");
-                      setSelectedPageId("");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="website">
-                        <div className="flex items-center gap-2">
-                          <Globe className="h-4 w-4" />
-                          Entire Website
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="page">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          Specific Page
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="section">
-                        <div className="flex items-center gap-2">
-                          <Layout className="h-4 w-4" />
-                          Specific Section
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Page Selection (for page or section scope) */}
-                {(scopeType === "page" || scopeType === "section") && (
+        <CardHeader>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="gap-2 flex flex-col">
+              <CardTitle>Questionnaire</CardTitle>
+              <CardDescription>
+                Create questions to gather information from clients
+              </CardDescription>
+            </div>
+            <Dialog open={isAddingQuestion} onOpenChange={setIsAddingQuestion}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="w-full sm:w-auto">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Question
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Add New Question</DialogTitle>
+                  <DialogDescription>
+                    Create a question for clients to answer
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  {/* Scope Selection */}
                   <div className="space-y-2">
-                    <Label>Page</Label>
+                    <Label>Scope</Label>
                     <Select
-                      value={scopeType === "page" ? scopeId : selectedPageId}
-                      onValueChange={(value) => {
-                        if (scopeType === "page") {
-                          setScopeId(value);
-                        } else {
-                          setSelectedPageId(value);
-                          setScopeId("");
-                        }
+                      value={scopeType}
+                      onValueChange={(value: QuestionScopeType) => {
+                        setScopeType(value);
+                        setScopeId("");
+                        setSelectedPageId("");
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a page" />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {pages.map((page) => (
-                          <SelectItem key={page.id} value={page.id}>
-                            {page.name}
+                        <SelectItem value="website">
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4" />
+                            Entire Website
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="page">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4" />
+                            Specific Page
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="section">
+                          <div className="flex items-center gap-2">
+                            <Layout className="h-4 w-4" />
+                            Specific Section
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Page Selection (for page or section scope) */}
+                  {(scopeType === "page" || scopeType === "section") && (
+                    <div className="space-y-2">
+                      <Label>Page</Label>
+                      <Select
+                        value={scopeType === "page" ? scopeId : selectedPageId}
+                        onValueChange={(value) => {
+                          if (scopeType === "page") {
+                            setScopeId(value);
+                          } else {
+                            setSelectedPageId(value);
+                            setScopeId("");
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a page" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {pages.map((page) => (
+                            <SelectItem key={page.id} value={page.id}>
+                              {page.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Section Selection (for section scope) */}
+                  {scopeType === "section" && selectedPageId && (
+                    <div className="space-y-2">
+                      <Label>Section</Label>
+                      <Select value={scopeId} onValueChange={setScopeId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a section" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {pages
+                            .find((p) => p.id === selectedPageId)
+                            ?.sections.map((section) => (
+                              <SelectItem key={section.id} value={section.id}>
+                                {section.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Field Type */}
+                  <div className="space-y-2">
+                    <Label>Field Type</Label>
+                    <Select
+                      value={fieldType}
+                      onValueChange={(value: QuestionFieldType) =>
+                        setFieldType(value)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {FIELD_TYPES.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                )}
 
-                {/* Section Selection (for section scope) */}
-                {scopeType === "section" && selectedPageId && (
-                  <div className="space-y-2">
-                    <Label>Section</Label>
-                    <Select value={scopeId} onValueChange={setScopeId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a section" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {pages
-                          .find((p) => p.id === selectedPageId)
-                          ?.sections.map((section) => (
-                            <SelectItem key={section.id} value={section.id}>
-                              {section.name}
+                  {/* Max File Count (for file type) */}
+                  {fieldType === "file" && (
+                    <div className="space-y-2">
+                      <Label>Maximum Files</Label>
+                      <Select
+                        value={String(maxFileCount)}
+                        onValueChange={(value) => setMaxFileCount(Number(value))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20].map((n) => (
+                            <SelectItem key={n} value={String(n)}>
+                              {n === 1 ? "1 file" : `Up to ${n} files`}
                             </SelectItem>
                           ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        How many files can the client upload for this question
+                      </p>
+                    </div>
+                  )}
 
-                {/* Field Type */}
-                <div className="space-y-2">
-                  <Label>Field Type</Label>
-                  <Select
-                    value={fieldType}
-                    onValueChange={(value: QuestionFieldType) =>
-                      setFieldType(value)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FIELD_TYPES.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Label */}
-                <div className="space-y-2">
-                  <Label>Question Label *</Label>
-                  <Input
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g., What colors do you prefer?"
-                  />
-                </div>
-
-                {/* Description */}
-                <div className="space-y-2">
-                  <Label>Description (Optional)</Label>
-                  <Textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Additional context or instructions"
-                    rows={2}
-                  />
-                </div>
-
-                {/* Placeholder (for text inputs) */}
-                {(fieldType === "text" ||
-                  fieldType === "textarea" ||
-                  fieldType === "url") && (
+                  {/* Label */}
                   <div className="space-y-2">
-                    <Label>Placeholder (Optional)</Label>
+                    <Label>Question Label *</Label>
                     <Input
-                      value={placeholder}
-                      onChange={(e) => setPlaceholder(e.target.value)}
-                      placeholder="e.g., Enter your answer..."
+                      value={label}
+                      onChange={(e) => setLabel(e.target.value)}
+                      placeholder="e.g., What colors do you prefer?"
                     />
                   </div>
-                )}
 
-                {/* Options (for select/checkbox) */}
-                {(fieldType === "select" || fieldType === "checkbox") && (
+                  {/* Description */}
                   <div className="space-y-2">
-                    <Label>Options *</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={newOption}
-                        onChange={(e) => setNewOption(e.target.value)}
-                        placeholder="Add an option"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addOption();
-                          }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addOption}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                    {options.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {options.map((option, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="gap-1"
-                          >
-                            {option}
-                            <button
-                              type="button"
-                              onClick={() => removeOption(index)}
-                              className="ml-1 hover:text-destructive"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))}
+                    <Label>Description (Optional)</Label>
+                    <Textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Additional context or instructions"
+                      rows={2}
+                    />
+                  </div>
+
+                  {/* Placeholder (for text inputs) */}
+                  {(fieldType === "text" ||
+                    fieldType === "textarea" ||
+                    fieldType === "url") && (
+                      <div className="space-y-2">
+                        <Label>Placeholder (Optional)</Label>
+                        <Input
+                          value={placeholder}
+                          onChange={(e) => setPlaceholder(e.target.value)}
+                          placeholder="e.g., Enter your answer..."
+                        />
                       </div>
                     )}
+
+                  {/* Options (for select/checkbox) */}
+                  {(fieldType === "select" || fieldType === "checkbox") && (
+                    <div className="space-y-2">
+                      <Label>Options *</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={newOption}
+                          onChange={(e) => setNewOption(e.target.value)}
+                          placeholder="Add an option"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addOption();
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={addOption}
+                        >
+                          Add
+                        </Button>
+                      </div>
+                      {options.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {options.map((option, index) => (
+                            <Badge
+                              key={index}
+                              variant="secondary"
+                              className="gap-1"
+                            >
+                              {option}
+                              <button
+                                type="button"
+                                onClick={() => removeOption(index)}
+                                className="ml-1 hover:text-destructive"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Required */}
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="isRequired"
+                      checked={isRequired}
+                      onCheckedChange={(checked) =>
+                        setIsRequired(checked === true)
+                      }
+                    />
+                    <Label htmlFor="isRequired" className="cursor-pointer">
+                      Required field
+                    </Label>
                   </div>
-                )}
 
-                {/* Required */}
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="isRequired"
-                    checked={isRequired}
-                    onCheckedChange={(checked) =>
-                      setIsRequired(checked === true)
-                    }
-                  />
-                  <Label htmlFor="isRequired" className="cursor-pointer">
-                    Required field
-                  </Label>
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        resetForm();
+                        setIsAddingQuestion(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={handleAddQuestion} disabled={isSubmitting}>
+                      {isSubmitting ? "Adding..." : "Add Question"}
+                    </Button>
+                  </div>
                 </div>
-
-                {/* Actions */}
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      resetForm();
-                      setIsAddingQuestion(false);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button onClick={handleAddQuestion} disabled={isSubmitting}>
-                    {isSubmitting ? "Adding..." : "Add Question"}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          </div>
         </CardHeader>
         <CardContent>
           {questions.length === 0 ? (

@@ -77,7 +77,7 @@ export function EmailEntry({ project, onEmailSubmit }: EmailEntryProps) {
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center p-4">
+      <main className="flex flex-1 items-center justify-center p-4 pb-20 sm:pb-50">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CardTitle>Enter Your Email</CardTitle>

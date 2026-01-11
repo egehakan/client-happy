@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { type Project, type Page, type Section, type Screenshot, type Question } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Card,
   CardContent,
@@ -25,6 +25,21 @@ import { EmailEntry } from "@/components/client/email-entry";
 import { SelectionScreen } from "@/components/client/selection-screen";
 import { QuestionnaireInterface } from "@/components/client/questionnaire-interface";
 
+interface CompletionStatus {
+  voting: {
+    completed: boolean;
+    hasNewContent: boolean;
+    totalItems: number;
+    completedItems: number;
+  };
+  questionnaire: {
+    completed: boolean;
+    hasNewContent: boolean;
+    totalItems: number;
+    completedItems: number;
+  };
+}
+
 interface SectionWithScreenshots extends Section {
   screenshots: Screenshot[];
 }
@@ -35,7 +50,7 @@ interface PageWithSections extends Page {
 
 interface ScreenshotWithContext extends Screenshot {
   pageName: string;
-  sectionName: string;
+  sectionName: string | null;
 }
 
 interface VotingInterfaceProps {
@@ -65,9 +80,11 @@ export function VotingInterface({
   const [voterEmail, setVoterEmail] = useState<string | null>(null);
   const [flowState, setFlowState] = useState<FlowState>("email");
   const [isLoadingVotes, setIsLoadingVotes] = useState(false);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [votes, setVotes] = useState<Record<string, VoteState>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [completionStatus, setCompletionStatus] = useState<CompletionStatus | null>(null);
 
   const hasScreenshots = screenshots.length > 0;
   const hasQuestions = questions.length > 0;
@@ -75,16 +92,111 @@ export function VotingInterface({
   // Determine if we need selection screen
   const needsSelectionScreen = hasScreenshots && hasQuestions;
 
+  const fetchCompletionStatus = useCallback(async (email: string) => {
+    try {
+      const response = await fetch(
+        `/api/projects/by-slug/${project.slug}/completion-status?email=${encodeURIComponent(email)}`
+      );
+      if (response.ok) {
+        const status = await response.json();
+        setCompletionStatus(status);
+      }
+    } catch (err) {
+      console.error("Failed to fetch completion status:", err);
+    }
+  }, [project.slug]);
+
+  // Check localStorage for existing email on mount
+  useEffect(() => {
+    const storageKey = `voter_email_${project.slug}`;
+    const savedEmail = localStorage.getItem(storageKey);
+
+    if (savedEmail) {
+      setVoterEmail(savedEmail);
+      // If we have both features, go to selection screen
+      if (needsSelectionScreen) {
+        setFlowState("selection");
+        fetchCompletionStatus(savedEmail).finally(() => setIsLoadingStatus(false));
+      } else if (hasScreenshots) {
+        setFlowState("voting");
+        setIsLoadingVotes(true);
+        loadExistingVotes(savedEmail).finally(() => {
+          setIsLoadingVotes(false);
+          setIsLoadingStatus(false);
+          // Show initial context overlay
+          if (screenshots.length > 0) {
+            showContextFor(screenshots[0]);
+          }
+        });
+      } else if (hasQuestions) {
+        setFlowState("questionnaire");
+        setIsLoadingStatus(false);
+      } else {
+        setIsLoadingStatus(false);
+      }
+    } else {
+      setIsLoadingStatus(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const currentScreenshot = screenshots[currentIndex];
+  const previousScreenshot = currentIndex > 0 ? screenshots[currentIndex - 1] : null;
   const currentVote = currentScreenshot
     ? votes[currentScreenshot.id] || { vote: null, comment: "" }
     : { vote: null, comment: "" };
 
+  // Context overlay state
+  const [showContextOverlay, setShowContextOverlay] = useState(false);
+  const [contextInfo, setContextInfo] = useState<{
+    pageName: string;
+    sectionName: string | null;
+  } | null>(null);
+
+  // Helper to show context overlay
+  const showContextFor = useCallback((screenshot: ScreenshotWithContext) => {
+    setContextInfo({
+      pageName: screenshot.pageName,
+      sectionName: screenshot.sectionName
+    });
+    setShowContextOverlay(true);
+    setTimeout(() => setShowContextOverlay(false), 2000);
+  }, []);
+
+  // Show overlay on page/section changes during navigation
+  useEffect(() => {
+    // Reset overlay when index changes
+    setShowContextOverlay(false);
+
+    if (!previousScreenshot || !currentScreenshot) return;
+
+    const isNewPage = previousScreenshot.pageName !== currentScreenshot.pageName;
+    const isNewSection = !isNewPage && previousScreenshot.sectionName !== currentScreenshot.sectionName;
+
+    if (isNewPage || isNewSection) {
+      setContextInfo({
+        pageName: currentScreenshot.pageName,
+        sectionName: currentScreenshot.sectionName
+      });
+      setShowContextOverlay(true);
+      const timer = setTimeout(() => setShowContextOverlay(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentIndex, previousScreenshot, currentScreenshot]);
+
   const votedCount = Object.values(votes).filter((v) => v.vote !== null).length;
   const progress = screenshots.length > 0 ? (votedCount / screenshots.length) * 100 : 0;
+  const hasAnyVotes = votedCount > 0;
 
   async function handleEmailSubmit(email: string) {
     setVoterEmail(email);
+
+    // Store email in localStorage for persistence
+    const storageKey = `voter_email_${project.slug}`;
+    localStorage.setItem(storageKey, email);
+
+    // Fetch completion status
+    await fetchCompletionStatus(email);
 
     // If both screenshots and questions exist, show selection screen
     if (needsSelectionScreen) {
@@ -98,6 +210,10 @@ export function VotingInterface({
       setIsLoadingVotes(true);
       await loadExistingVotes(email);
       setIsLoadingVotes(false);
+      // Show initial context overlay
+      if (screenshots.length > 0) {
+        showContextFor(screenshots[0]);
+      }
     } else if (hasQuestions) {
       setFlowState("questionnaire");
     }
@@ -131,6 +247,10 @@ export function VotingInterface({
     setIsLoadingVotes(true);
     await loadExistingVotes(voterEmail!);
     setIsLoadingVotes(false);
+    // Show initial context overlay
+    if (screenshots.length > 0) {
+      showContextFor(screenshots[0]);
+    }
   }
 
   function handleSelectQuestionnaire() {
@@ -178,23 +298,22 @@ export function VotingInterface({
   }
 
   async function handleSubmit() {
-    const allVoted = screenshots.every(
-      (s) => votes[s.id]?.vote !== null && votes[s.id]?.vote !== undefined
-    );
-
-    if (!allVoted) {
-      toast.error("Please vote on all screenshots before submitting");
+    if (!hasAnyVotes) {
+      toast.error("Please vote on at least one screenshot before submitting");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const votesToSubmit = screenshots.map((s) => ({
-        screenshotId: s.id,
-        vote: votes[s.id].vote!,
-        comment: votes[s.id].comment || undefined,
-      }));
+      // Only submit screenshots that have been voted on
+      const votesToSubmit = screenshots
+        .filter((s) => votes[s.id]?.vote !== null && votes[s.id]?.vote !== undefined)
+        .map((s) => ({
+          screenshotId: s.id,
+          vote: votes[s.id].vote!,
+          comment: votes[s.id].comment || undefined,
+        }));
 
       const response = await fetch("/api/votes", {
         method: "POST",
@@ -212,6 +331,18 @@ export function VotingInterface({
     }
   }
 
+  // Initial loading state (checking localStorage)
+  if (isLoadingStatus) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="mt-4 text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Email entry state
   if (flowState === "email") {
     return <EmailEntry project={project} onEmailSubmit={handleEmailSubmit} />;
@@ -225,6 +356,7 @@ export function VotingInterface({
         email={voterEmail}
         hasScreenshots={hasScreenshots}
         hasQuestions={hasQuestions}
+        completionStatus={completionStatus}
         onSelectVoting={handleSelectVoting}
         onSelectQuestionnaire={handleSelectQuestionnaire}
       />
@@ -269,16 +401,29 @@ export function VotingInterface({
       {/* Header */}
       <header className="border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold sm:text-xl">{project.name}</h1>
-            {project.description && (
-              <p className="text-xs text-muted-foreground sm:text-sm">
-                {project.description}
-              </p>
+          <div className="flex items-center gap-3">
+            {needsSelectionScreen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleBackToSelection}
+                className="h-8 w-8"
+                title="Back to selection"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
             )}
-            <p className="text-xs text-muted-foreground">
-              Voting as: {voterEmail}
-            </p>
+            <div>
+              <h1 className="text-lg font-bold sm:text-xl">{project.name}</h1>
+              {project.description && (
+                <p className="text-xs text-muted-foreground sm:text-sm">
+                  {project.description}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {voterEmail}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -288,7 +433,7 @@ export function VotingInterface({
       </header>
 
       {/* Progress */}
-      <div className="border-b bg-card/50 px-4 py-2 sm:px-6 sm:py-3">
+      <div className="border-b bg-card/50 px-4 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto max-w-4xl">
           <div className="flex items-center justify-between text-xs sm:text-sm">
             <span>
@@ -310,7 +455,7 @@ export function VotingInterface({
                   {currentScreenshot.title || `Screenshot ${currentIndex + 1}`}
                 </CardTitle>
                 <CardDescription className="text-xs sm:text-sm">
-                  {currentScreenshot.pageName} / {currentScreenshot.sectionName}
+                  {currentScreenshot.pageName}{currentScreenshot.sectionName ? ` / ${currentScreenshot.sectionName}` : ""}
                 </CardDescription>
               </div>
               <Badge variant="outline" className="flex-shrink-0 text-xs">
@@ -327,20 +472,42 @@ export function VotingInterface({
                   src={currentScreenshot.filePath}
                   alt={currentScreenshot.title || "Screenshot"}
                   fill
-                  className="object-contain"
+                  className={cn(
+                    "object-contain transition-[filter] duration-500",
+                    showContextOverlay && "blur-sm"
+                  )}
                 />
               ) : currentScreenshot.externalUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={currentScreenshot.externalUrl}
                   alt={currentScreenshot.title || "Screenshot"}
-                  className="h-full w-full object-contain"
+                  className={cn(
+                    "h-full w-full object-contain transition-[filter] duration-500",
+                    showContextOverlay && "blur-sm"
+                  )}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center">
                   <span className="text-muted-foreground">
                     No image available
                   </span>
+                </div>
+              )}
+
+              {/* Context Overlay */}
+              {showContextOverlay && contextInfo && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/60 animate-in fade-in duration-300">
+                  <div className="text-center px-4">
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Page</p>
+                    <h2 className="text-xl sm:text-2xl font-bold">{contextInfo.pageName}</h2>
+                    {contextInfo.sectionName && (
+                      <>
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground mt-3 mb-1">Section</p>
+                        <h3 className="text-lg sm:text-xl font-semibold">{contextInfo.sectionName}</h3>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -403,34 +570,21 @@ export function VotingInterface({
 
             {/* Navigation */}
             <div className="flex items-center justify-between gap-2 pt-2 sm:pt-4">
-              <div className="flex gap-2">
-                {needsSelectionScreen && (
-                  <Button
-                    variant="ghost"
-                    onClick={handleBackToSelection}
-                    size="sm"
-                    className="sm:size-default"
-                  >
-                    <ArrowLeft className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Back</span>
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  onClick={goToPrevious}
-                  disabled={currentIndex === 0}
-                  size="sm"
-                  className="sm:size-default"
-                >
-                  <ChevronLeft className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Previous</span>
-                </Button>
-              </div>
+              <Button
+                variant="outline"
+                onClick={goToPrevious}
+                disabled={currentIndex === 0}
+                size="sm"
+                className="sm:size-default"
+              >
+                <ChevronLeft className="h-4 w-4 sm:mr-2" />
+                <span className="sm:inline">Previous</span>
+              </Button>
 
               {currentIndex === screenshots.length - 1 ? (
                 <Button
                   onClick={handleSubmit}
-                  disabled={isSubmitting || votedCount !== screenshots.length}
+                  disabled={isSubmitting || !hasAnyVotes}
                   size="sm"
                   className="sm:size-default"
                 >

@@ -64,7 +64,16 @@ async function getProjectBySlug(slug: string) {
         })
       );
 
-      return { ...page, sections: sectionsWithScreenshots };
+      // Fetch page-level screenshots (screenshots directly on the page, not in a section)
+      const pageScreenshotsResult = await db.execute({
+        sql: "SELECT * FROM screenshots WHERE page_id = ? AND section_id IS NULL ORDER BY sort_order",
+        args: [page.id],
+      });
+      const pageScreenshots = pageScreenshotsResult.rows.map((r) =>
+        screenshotFromRow(r as unknown as ScreenshotRow)
+      );
+
+      return { ...page, sections: sectionsWithScreenshots, screenshots: pageScreenshots };
     })
   );
 
@@ -101,16 +110,26 @@ export default async function ClientVotingPage({ params }: PageProps) {
 
   const { project, pages, questions, sections } = data;
 
-  // Flatten all screenshots for voting
-  const allScreenshots = pages.flatMap((page) =>
-    page.sections.flatMap((section) =>
+  // Flatten all screenshots for voting (both section and page-level screenshots)
+  const allScreenshots = pages.flatMap((page) => {
+    // Section-level screenshots
+    const sectionScreenshots = page.sections.flatMap((section) =>
       section.screenshots.map((screenshot) => ({
         ...screenshot,
         pageName: page.name,
         sectionName: section.name,
       }))
-    )
-  );
+    );
+
+    // Page-level screenshots (no section)
+    const pageScreenshots = (page.screenshots || []).map((screenshot) => ({
+      ...screenshot,
+      pageName: page.name,
+      sectionName: null as string | null,
+    }));
+
+    return [...pageScreenshots, ...sectionScreenshots];
+  });
 
   // Flatten pages for questionnaire (without sections/screenshots)
   const flatPages = pages.map((page) => ({

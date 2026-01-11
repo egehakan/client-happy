@@ -12,13 +12,29 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Images, FileQuestion, ArrowRight } from "lucide-react";
+import { Images, FileQuestion, ArrowRight, CheckCircle, Sparkles } from "lucide-react";
+
+interface CompletionStatus {
+  voting: {
+    completed: boolean;
+    hasNewContent: boolean;
+    totalItems: number;
+    completedItems: number;
+  };
+  questionnaire: {
+    completed: boolean;
+    hasNewContent: boolean;
+    totalItems: number;
+    completedItems: number;
+  };
+}
 
 interface SelectionScreenProps {
   project: Project;
   email: string;
   hasScreenshots: boolean;
   hasQuestions: boolean;
+  completionStatus: CompletionStatus | null;
   onSelectVoting: () => void;
   onSelectQuestionnaire: () => void;
 }
@@ -28,9 +44,15 @@ export function SelectionScreen({
   email,
   hasScreenshots,
   hasQuestions,
+  completionStatus,
   onSelectVoting,
   onSelectQuestionnaire,
 }: SelectionScreenProps) {
+  const votingCompleted = completionStatus?.voting.completed ?? false;
+  const votingHasNew = completionStatus?.voting.hasNewContent ?? false;
+  const questionnaireCompleted = completionStatus?.questionnaire.completed ?? false;
+  const questionnaireHasNew = completionStatus?.questionnaire.hasNewContent ?? false;
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
@@ -43,7 +65,7 @@ export function SelectionScreen({
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              Logged in as: {email}
+              {email}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -53,7 +75,7 @@ export function SelectionScreen({
         </div>
       </header>
 
-      <main className="flex flex-1 items-center justify-center p-4">
+      <main className="flex flex-1 items-center justify-center p-4 pb-20 sm:pb-50">
         <div className="w-full max-w-2xl space-y-6">
           <div className="text-center">
             <h2 className="text-2xl font-bold sm:text-3xl">
@@ -67,22 +89,35 @@ export function SelectionScreen({
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Voting Option */}
             <Card
-              className={`relative overflow-hidden transition-all ${
-                hasScreenshots
-                  ? "cursor-pointer hover:border-primary hover:shadow-lg"
-                  : "opacity-60"
-              }`}
+              className={`relative flex flex-col overflow-hidden transition-all ${hasScreenshots
+                ? "cursor-pointer hover:border-primary hover:shadow-lg"
+                : "opacity-60"
+                } ${votingHasNew ? "border-blue-500" : votingCompleted ? "border-green-500/50" : ""}`}
               onClick={hasScreenshots ? onSelectVoting : undefined}
             >
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                    <Images className="h-6 w-6 text-primary" />
-                  </div>
-                  {!hasScreenshots && (
-                    <Badge variant="secondary">Coming Soon</Badge>
-                  )}
+              <CardHeader className="flex-1">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                  <Images className="h-6 w-6 text-primary" />
                 </div>
+                {(votingCompleted || votingHasNew || !hasScreenshots) && (
+                  <div className="flex flex-wrap gap-2">
+                    {votingCompleted && (
+                      <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                        <CheckCircle className="mr-1 h-3 w-3" />
+                        Completed
+                      </Badge>
+                    )}
+                    {votingHasNew && (
+                      <Badge variant="default" className="bg-blue-600 hover:bg-blue-700">
+                        <Sparkles className="mr-1 h-3 w-3" />
+                        New Items
+                      </Badge>
+                    )}
+                    {!hasScreenshots && (
+                      <Badge variant="secondary">Coming Soon</Badge>
+                    )}
+                  </div>
+                )}
                 <CardTitle className="text-lg">Vote on Designs</CardTitle>
                 <CardDescription>
                   Review and vote on design screenshots to help us understand
@@ -93,6 +128,7 @@ export function SelectionScreen({
                 <Button
                   className="w-full"
                   disabled={!hasScreenshots}
+                  variant={votingCompleted && !votingHasNew ? "outline" : "default"}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (hasScreenshots) onSelectVoting();
@@ -100,7 +136,7 @@ export function SelectionScreen({
                 >
                   {hasScreenshots ? (
                     <>
-                      Start Voting
+                      {votingCompleted ? (votingHasNew ? "Review New Items" : "Update Votes") : "Start Voting"}
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </>
                   ) : (
@@ -112,22 +148,35 @@ export function SelectionScreen({
 
             {/* Questionnaire Option */}
             <Card
-              className={`relative overflow-hidden transition-all ${
-                hasQuestions
-                  ? "cursor-pointer hover:border-primary hover:shadow-lg"
-                  : "opacity-60"
-              }`}
+              className={`relative flex flex-col overflow-hidden transition-all ${hasQuestions
+                ? "cursor-pointer hover:border-primary hover:shadow-lg"
+                : "opacity-60"
+                } ${questionnaireHasNew ? "border-blue-500" : questionnaireCompleted ? "border-green-500/50" : ""}`}
               onClick={hasQuestions ? onSelectQuestionnaire : undefined}
             >
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                    <FileQuestion className="h-6 w-6 text-primary" />
-                  </div>
-                  {!hasQuestions && (
-                    <Badge variant="secondary">Coming Soon</Badge>
-                  )}
+              <CardHeader className="flex-1">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                  <FileQuestion className="h-6 w-6 text-primary" />
                 </div>
+                {(questionnaireCompleted || questionnaireHasNew || !hasQuestions) && (
+                  <div className="flex flex-wrap gap-2">
+                    {questionnaireCompleted && (
+                      <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                        <CheckCircle className="mr-1 h-3 w-3" />
+                        Completed
+                      </Badge>
+                    )}
+                    {questionnaireHasNew && (
+                      <Badge variant="default" className="bg-blue-600 hover:bg-blue-700">
+                        <Sparkles className="mr-1 h-3 w-3" />
+                        New Questions
+                      </Badge>
+                    )}
+                    {!hasQuestions && (
+                      <Badge variant="secondary">Coming Soon</Badge>
+                    )}
+                  </div>
+                )}
                 <CardTitle className="text-lg">Complete Questionnaire</CardTitle>
                 <CardDescription>
                   Answer questions to help us gather information about your
@@ -138,6 +187,7 @@ export function SelectionScreen({
                 <Button
                   className="w-full"
                   disabled={!hasQuestions}
+                  variant={questionnaireCompleted && !questionnaireHasNew ? "outline" : "default"}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (hasQuestions) onSelectQuestionnaire();
@@ -145,7 +195,7 @@ export function SelectionScreen({
                 >
                   {hasQuestions ? (
                     <>
-                      Start Questionnaire
+                      {questionnaireCompleted ? (questionnaireHasNew ? "Answer New Questions" : "Update Responses") : "Start Questionnaire"}
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </>
                   ) : (

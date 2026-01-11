@@ -72,7 +72,16 @@ async function getProjectData(id: string) {
         })
       );
 
-      return { ...page, sections: sectionsWithScreenshots };
+      // Fetch page-level screenshots (screenshots directly on the page, not in a section)
+      const pageScreenshotsResult = await db.execute({
+        sql: "SELECT * FROM screenshots WHERE page_id = ? AND section_id IS NULL ORDER BY sort_order",
+        args: [page.id],
+      });
+      const pageScreenshots = pageScreenshotsResult.rows.map((r) =>
+        screenshotFromRow(r as unknown as ScreenshotRow)
+      );
+
+      return { ...page, sections: sectionsWithScreenshots, screenshots: pageScreenshots };
     })
   );
 
