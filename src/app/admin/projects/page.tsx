@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { unstable_noStore as noStore } from "next/cache";
 import { db, initializeSchema } from "@/lib/db";
 import { type ProjectRow, projectFromRow } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Plus } from "lucide-react";
 import { ProjectCard } from "@/components/admin/project-card";
 
 async function getProjects() {
+  noStore();
   await initializeSchema();
   const result = await db.execute("SELECT * FROM projects ORDER BY created_at DESC");
   return result.rows.map((row) => projectFromRow(row as unknown as ProjectRow));

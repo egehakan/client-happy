@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { unstable_noStore as noStore } from "next/cache";
 import { db, initializeSchema } from "@/lib/db";
 import {
   type ProjectRow,
@@ -52,6 +53,7 @@ interface ProjectWithData {
 }
 
 async function getGroupedVotes(): Promise<ProjectWithData[]> {
+  noStore();
   await initializeSchema();
 
   // Get all projects

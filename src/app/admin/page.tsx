@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { unstable_noStore as noStore } from "next/cache";
 import { db, initializeSchema } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ interface Stats {
 }
 
 async function getStats(): Promise<Stats> {
+  noStore();
   await initializeSchema();
 
   const projectResult = await db.execute("SELECT COUNT(*) as count FROM projects");
