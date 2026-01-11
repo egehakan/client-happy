@@ -3,24 +3,28 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { FolderOpen, BarChart3, Home } from "lucide-react";
+import { FolderOpen, BarChart3, Home, Settings } from "lucide-react";
+import { UserMenu } from "./user-menu";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/logo";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: Home },
   { href: "/admin/projects", label: "Projects", icon: FolderOpen },
   { href: "/admin/votes", label: "Votes", icon: BarChart3 },
+  { href: "/admin/account", label: "Account", icon: Settings },
 ];
 
 export function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 border-r bg-muted/30 p-4">
-      <div className="mb-8">
-        <h1 className="text-xl font-bold">Style Finder</h1>
-        <p className="text-sm text-muted-foreground">Admin Panel</p>
+    <aside className="sticky top-0 hidden h-screen w-64 flex-col border-r bg-muted/30 p-4 md:flex">
+      <div className="mb-8 flex items-center justify-between">
+        <Logo subtitle="Admin Panel" href="/admin" />
+        <ThemeToggle />
       </div>
-      <nav className="space-y-1">
+      <nav className="flex-1 space-y-1">
         {navItems.map((item) => {
           const isActive =
             item.href === "/admin"
@@ -44,6 +48,9 @@ export function AdminSidebar() {
           );
         })}
       </nav>
+      <div className="border-t pt-4">
+        <UserMenu />
+      </div>
     </aside>
   );
 }

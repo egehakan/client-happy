@@ -86,7 +86,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link
             href="/admin/projects"
@@ -95,7 +95,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Projects
           </Link>
-          <h1 className="mt-2 text-3xl font-bold">{project.name}</h1>
+          <h1 className="mt-2 text-2xl font-bold sm:text-3xl">{project.name}</h1>
         </div>
         <div className="flex gap-2">
           <CopyLinkButton slug={project.slug} />
@@ -104,19 +104,20 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            <Button variant="outline">
+            <Button variant="outline" size="sm" className="sm:size-default">
               <ExternalLink className="mr-2 h-4 w-4" />
-              Preview
+              <span className="hidden sm:inline">Preview</span>
+              <span className="sm:hidden">View</span>
             </Button>
           </a>
         </div>
       </div>
 
-      <Tabs defaultValue="pages" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="pages">Pages & Sections</TabsTrigger>
-          <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
+      <Tabs defaultValue="pages" className="space-y-4 sm:space-y-6">
+        <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsTrigger value="details" className="text-xs sm:text-sm">Details</TabsTrigger>
+          <TabsTrigger value="pages" className="text-xs sm:text-sm">Pages & Sections</TabsTrigger>
+          <TabsTrigger value="screenshots" className="text-xs sm:text-sm">Screenshots</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details">

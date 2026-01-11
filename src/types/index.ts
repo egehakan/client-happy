@@ -1,9 +1,18 @@
+export interface User {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   slug: string;
   type: "web" | "mobile";
   description: string | null;
+  userId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,12 +83,24 @@ export interface ProjectWithPages extends Project {
 }
 
 // Database row types (snake_case from SQLite)
+export interface UserRow {
+  id: string;
+  email: string;
+  password_hash: string;
+  email_verified: number;
+  verification_token: string | null;
+  verification_token_expires: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectRow {
   id: string;
   name: string;
   slug: string;
   type: "web" | "mobile";
   description: string | null;
+  user_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -127,6 +148,16 @@ export interface VoteRow {
 }
 
 // Utility functions to convert between row and interface types
+export function userFromRow(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    emailVerified: row.email_verified === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export function projectFromRow(row: ProjectRow): Project {
   return {
     id: row.id,
@@ -134,6 +165,7 @@ export function projectFromRow(row: ProjectRow): Project {
     slug: row.slug,
     type: row.type,
     description: row.description,
+    userId: row.user_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

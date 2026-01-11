@@ -90,10 +90,10 @@ export default async function ClientVotingPage({ params }: PageProps) {
 
   if (allScreenshots.length === 0) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center px-4">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">{project.name}</h1>
-          <p className="mt-2 text-muted-foreground">
+          <h1 className="text-xl font-bold sm:text-2xl">{project.name}</h1>
+          <p className="mt-2 text-sm text-muted-foreground sm:text-base">
             No screenshots available for voting yet.
           </p>
         </div>

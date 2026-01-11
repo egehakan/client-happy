@@ -200,9 +200,9 @@ function ScreenshotCard({ data }: { data: ScreenshotWithVotes }) {
 
   return (
     <div className="rounded-lg border bg-card">
-      <div className="flex gap-4 p-4">
+      <div className="flex flex-col gap-4 p-4 sm:flex-row">
         {/* Screenshot thumbnail */}
-        <div className="relative h-32 w-48 flex-shrink-0 overflow-hidden rounded-md bg-muted">
+        <div className="relative h-40 w-full flex-shrink-0 overflow-hidden rounded-md bg-muted sm:h-32 sm:w-48">
           {screenshot.sourceType === "local" && screenshot.filePath ? (
             <Image
               src={screenshot.filePath}
@@ -286,9 +286,9 @@ export default async function VotesPage() {
   return (
     <div>
       <Toaster />
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Vote Analytics</h1>
-        <p className="text-muted-foreground">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl font-bold sm:text-3xl">Vote Analytics</h1>
+        <p className="text-sm text-muted-foreground sm:text-base">
           View all votes grouped by project, page, and section
         </p>
       </div>
@@ -317,9 +317,9 @@ export default async function VotesPage() {
           {groupedData.map(({ project, pages, totalVotes: projectVotes }) => (
             <Card key={project.id}>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex flex-wrap items-center gap-2">
                       {project.name}
                       <Badge variant="outline">{project.type}</Badge>
                     </CardTitle>

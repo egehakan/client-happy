@@ -15,19 +15,23 @@ import {
   voteFromRow,
   type ProjectWithPages,
 } from "@/types";
+import { requireAuth } from "@/lib/auth/api-auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
 
     const projectResult = await db.execute({
-      sql: "SELECT * FROM projects WHERE id = ? OR slug = ?",
-      args: [id, id],
+      sql: "SELECT * FROM projects WHERE (id = ? OR slug = ?) AND user_id = ?",
+      args: [id, id, session.user.id],
     });
 
     if (projectResult.rows.length === 0) {
@@ -105,6 +109,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
 }
 
 export async function PUT(request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
@@ -119,8 +126,8 @@ export async function PUT(request: Request, { params }: RouteParams) {
     }
 
     const existing = await db.execute({
-      sql: "SELECT * FROM projects WHERE id = ?",
-      args: [id],
+      sql: "SELECT * FROM projects WHERE id = ? AND user_id = ?",
+      args: [id, session.user.id],
     });
 
     if (existing.rows.length === 0) {
@@ -183,13 +190,16 @@ export async function PUT(request: Request, { params }: RouteParams) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
 
     const existing = await db.execute({
-      sql: "SELECT * FROM projects WHERE id = ?",
-      args: [id],
+      sql: "SELECT * FROM projects WHERE id = ? AND user_id = ?",
+      args: [id, session.user.id],
     });
 
     if (existing.rows.length === 0) {

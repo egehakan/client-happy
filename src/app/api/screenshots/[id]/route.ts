@@ -4,15 +4,27 @@ import { del } from "@vercel/blob";
 import { db, initializeSchema } from "@/lib/db";
 import { updateScreenshotSchema } from "@/lib/validators";
 import { type ScreenshotRow, screenshotFromRow } from "@/types";
+import { requireAuth, userOwnsScreenshot } from "@/lib/auth/api-auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
+
+    // Verify user owns the screenshot
+    if (!(await userOwnsScreenshot(session.user.id, id))) {
+      return NextResponse.json(
+        { error: "Screenshot not found" },
+        { status: 404 }
+      );
+    }
 
     const result = await db.execute({
       sql: "SELECT * FROM screenshots WHERE id = ?",
@@ -27,8 +39,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
     }
 
     return NextResponse.json(screenshotFromRow(result.rows[0] as unknown as ScreenshotRow));
-  } catch (error) {
-    console.error("Failed to fetch screenshot:", error);
+  } catch (err) {
+    console.error("Failed to fetch screenshot:", err);
     return NextResponse.json(
       { error: "Failed to fetch screenshot" },
       { status: 500 }
@@ -37,9 +49,21 @@ export async function GET(_request: Request, { params }: RouteParams) {
 }
 
 export async function PUT(request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
+
+    // Verify user owns the screenshot
+    if (!(await userOwnsScreenshot(session.user.id, id))) {
+      return NextResponse.json(
+        { error: "Screenshot not found" },
+        { status: 404 }
+      );
+    }
+
     const body = await request.json();
     const result = updateScreenshotSchema.safeParse(body);
 
@@ -94,8 +118,8 @@ export async function PUT(request: Request, { params }: RouteParams) {
       args: [id],
     });
     return NextResponse.json(screenshotFromRow(row.rows[0] as unknown as ScreenshotRow));
-  } catch (error) {
-    console.error("Failed to update screenshot:", error);
+  } catch (err) {
+    console.error("Failed to update screenshot:", err);
     return NextResponse.json(
       { error: "Failed to update screenshot" },
       { status: 500 }
@@ -104,9 +128,20 @@ export async function PUT(request: Request, { params }: RouteParams) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
+
+    // Verify user owns the screenshot
+    if (!(await userOwnsScreenshot(session.user.id, id))) {
+      return NextResponse.json(
+        { error: "Screenshot not found" },
+        { status: 404 }
+      );
+    }
 
     const existing = await db.execute({
       sql: "SELECT * FROM screenshots WHERE id = ?",
@@ -137,8 +172,8 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Failed to delete screenshot:", error);
+  } catch (err) {
+    console.error("Failed to delete screenshot:", err);
     return NextResponse.json(
       { error: "Failed to delete screenshot" },
       { status: 500 }

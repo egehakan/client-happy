@@ -3,8 +3,12 @@ import { nanoid } from "nanoid";
 import { db, initializeSchema } from "@/lib/db";
 import { createScreenshotSchema } from "@/lib/validators";
 import { type ScreenshotRow, screenshotFromRow } from "@/types";
+import { requireAuth, userOwnsSection } from "@/lib/auth/api-auth";
 
 export async function GET(request: Request) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { searchParams } = new URL(request.url);
@@ -17,14 +21,19 @@ export async function GET(request: Request) {
       );
     }
 
+    // Verify user owns the section
+    if (!(await userOwnsSection(session.user.id, sectionId))) {
+      return NextResponse.json({ error: "Section not found" }, { status: 404 });
+    }
+
     const result = await db.execute({
       sql: "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order, created_at",
       args: [sectionId],
     });
     const screenshots = result.rows.map((row) => screenshotFromRow(row as unknown as ScreenshotRow));
     return NextResponse.json(screenshots);
-  } catch (error) {
-    console.error("Failed to fetch screenshots:", error);
+  } catch (err) {
+    console.error("Failed to fetch screenshots:", err);
     return NextResponse.json(
       { error: "Failed to fetch screenshots" },
       { status: 500 }
@@ -33,6 +42,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const body = await request.json();
@@ -49,12 +61,8 @@ export async function POST(request: Request) {
       result.data;
     const id = nanoid();
 
-    // Verify section exists
-    const section = await db.execute({
-      sql: "SELECT id FROM sections WHERE id = ?",
-      args: [sectionId],
-    });
-    if (section.rows.length === 0) {
+    // Verify user owns the section
+    if (!(await userOwnsSection(session.user.id, sectionId))) {
       return NextResponse.json(
         { error: "Section not found" },
         { status: 404 }
@@ -87,8 +95,8 @@ export async function POST(request: Request) {
       args: [id],
     });
     return NextResponse.json(screenshotFromRow(row.rows[0] as unknown as ScreenshotRow), { status: 201 });
-  } catch (error) {
-    console.error("Failed to create screenshot:", error);
+  } catch (err) {
+    console.error("Failed to create screenshot:", err);
     return NextResponse.json(
       { error: "Failed to create screenshot" },
       { status: 500 }

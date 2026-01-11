@@ -3,8 +3,12 @@ import { nanoid } from "nanoid";
 import { db, initializeSchema } from "@/lib/db";
 import { createSectionSchema } from "@/lib/validators";
 import { type SectionRow, sectionFromRow } from "@/types";
+import { requireAuth, userOwnsPage } from "@/lib/auth/api-auth";
 
 export async function GET(request: Request) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { searchParams } = new URL(request.url);
@@ -17,14 +21,19 @@ export async function GET(request: Request) {
       );
     }
 
+    // Verify user owns the page
+    if (!(await userOwnsPage(session.user.id, pageId))) {
+      return NextResponse.json({ error: "Page not found" }, { status: 404 });
+    }
+
     const result = await db.execute({
       sql: "SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order, created_at",
       args: [pageId],
     });
     const sections = result.rows.map((row) => sectionFromRow(row as unknown as SectionRow));
     return NextResponse.json(sections);
-  } catch (error) {
-    console.error("Failed to fetch sections:", error);
+  } catch (err) {
+    console.error("Failed to fetch sections:", err);
     return NextResponse.json(
       { error: "Failed to fetch sections" },
       { status: 500 }
@@ -33,6 +42,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const body = await request.json();
@@ -48,12 +60,8 @@ export async function POST(request: Request) {
     const { pageId, name, description } = result.data;
     const id = nanoid();
 
-    // Verify page exists
-    const page = await db.execute({
-      sql: "SELECT id FROM pages WHERE id = ?",
-      args: [pageId],
-    });
-    if (page.rows.length === 0) {
+    // Verify user owns the page
+    if (!(await userOwnsPage(session.user.id, pageId))) {
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
@@ -74,8 +82,8 @@ export async function POST(request: Request) {
       args: [id],
     });
     return NextResponse.json(sectionFromRow(row.rows[0] as unknown as SectionRow), { status: 201 });
-  } catch (error) {
-    console.error("Failed to create section:", error);
+  } catch (err) {
+    console.error("Failed to create section:", err);
     return NextResponse.json(
       { error: "Failed to create section" },
       { status: 500 }

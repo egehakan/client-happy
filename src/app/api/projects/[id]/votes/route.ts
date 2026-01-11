@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, initializeSchema } from "@/lib/db";
+import { requireAuth, userOwnsProject } from "@/lib/auth/api-auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -7,17 +8,15 @@ interface RouteParams {
 
 // DELETE all votes for a project
 export async function DELETE(_request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
 
-    // Verify project exists
-    const project = await db.execute({
-      sql: "SELECT id FROM projects WHERE id = ?",
-      args: [id],
-    });
-
-    if (project.rows.length === 0) {
+    // Verify user owns the project
+    if (!(await userOwnsProject(session.user.id, id))) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
@@ -54,8 +53,8 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
       success: true,
       deletedCount,
     });
-  } catch (error) {
-    console.error("Failed to reset votes:", error);
+  } catch (err) {
+    console.error("Failed to reset votes:", err);
     return NextResponse.json(
       { error: "Failed to reset votes" },
       { status: 500 }

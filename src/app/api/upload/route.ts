@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { nanoid } from "nanoid";
+import { requireAuth, userOwnsProject } from "@/lib/auth/api-auth";
 
 const ALLOWED_TYPES = [
   "image/jpeg",
@@ -13,6 +14,9 @@ const ALLOWED_TYPES = [
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 export async function POST(request: Request) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -27,6 +31,11 @@ export async function POST(request: Request) {
         { error: "projectId is required" },
         { status: 400 }
       );
+    }
+
+    // Verify user owns the project
+    if (!(await userOwnsProject(session.user.id, projectId))) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
     if (!ALLOWED_TYPES.includes(file.type)) {

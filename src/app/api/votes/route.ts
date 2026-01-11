@@ -3,8 +3,13 @@ import { nanoid } from "nanoid";
 import { db, initializeSchema } from "@/lib/db";
 import { createVoteSchema, submitVotesSchema } from "@/lib/validators";
 import { type VoteRow, voteFromRow } from "@/types";
+import { requireAuth, userOwnsProject, userOwnsScreenshot } from "@/lib/auth/api-auth";
 
 export async function GET(request: Request) {
+  // GET requires auth to view vote analytics
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { searchParams } = new URL(request.url);
@@ -12,6 +17,10 @@ export async function GET(request: Request) {
     const projectId = searchParams.get("projectId");
 
     if (screenshotId) {
+      // Verify user owns the screenshot
+      if (!(await userOwnsScreenshot(session.user.id, screenshotId))) {
+        return NextResponse.json({ error: "Screenshot not found" }, { status: 404 });
+      }
       const result = await db.execute({
         sql: "SELECT * FROM votes WHERE screenshot_id = ? ORDER BY created_at DESC",
         args: [screenshotId],
@@ -20,6 +29,10 @@ export async function GET(request: Request) {
     }
 
     if (projectId) {
+      // Verify user owns the project
+      if (!(await userOwnsProject(session.user.id, projectId))) {
+        return NextResponse.json({ error: "Project not found" }, { status: 404 });
+      }
       // Get all votes for a project (join through sections -> pages -> project)
       const result = await db.execute({
         sql: `
@@ -35,13 +48,23 @@ export async function GET(request: Request) {
       return NextResponse.json(result.rows.map((row) => voteFromRow(row as unknown as VoteRow)));
     }
 
-    // Return all votes (for admin overview)
-    const result = await db.execute(
-      "SELECT * FROM votes ORDER BY created_at DESC LIMIT 100"
-    );
+    // Return votes for user's projects only
+    const result = await db.execute({
+      sql: `
+        SELECT v.* FROM votes v
+        JOIN screenshots s ON v.screenshot_id = s.id
+        JOIN sections sec ON s.section_id = sec.id
+        JOIN pages p ON sec.page_id = p.id
+        JOIN projects pr ON p.project_id = pr.id
+        WHERE pr.user_id = ?
+        ORDER BY v.created_at DESC
+        LIMIT 100
+      `,
+      args: [session.user.id],
+    });
     return NextResponse.json(result.rows.map((row) => voteFromRow(row as unknown as VoteRow)));
-  } catch (error) {
-    console.error("Failed to fetch votes:", error);
+  } catch (err) {
+    console.error("Failed to fetch votes:", err);
     return NextResponse.json(
       { error: "Failed to fetch votes" },
       { status: 500 }

@@ -3,15 +3,24 @@ import { type InValue } from "@libsql/client";
 import { db, initializeSchema } from "@/lib/db";
 import { updateSectionSchema } from "@/lib/validators";
 import { type SectionRow, sectionFromRow } from "@/types";
+import { requireAuth, userOwnsSection } from "@/lib/auth/api-auth";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
+
+    // Verify user owns the section
+    if (!(await userOwnsSection(session.user.id, id))) {
+      return NextResponse.json({ error: "Section not found" }, { status: 404 });
+    }
 
     const result = await db.execute({
       sql: "SELECT * FROM sections WHERE id = ?",
@@ -23,8 +32,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
     }
 
     return NextResponse.json(sectionFromRow(result.rows[0] as unknown as SectionRow));
-  } catch (error) {
-    console.error("Failed to fetch section:", error);
+  } catch (err) {
+    console.error("Failed to fetch section:", err);
     return NextResponse.json(
       { error: "Failed to fetch section" },
       { status: 500 }
@@ -33,9 +42,18 @@ export async function GET(_request: Request, { params }: RouteParams) {
 }
 
 export async function PUT(request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
+
+    // Verify user owns the section
+    if (!(await userOwnsSection(session.user.id, id))) {
+      return NextResponse.json({ error: "Section not found" }, { status: 404 });
+    }
+
     const body = await request.json();
     const result = updateSectionSchema.safeParse(body);
 
@@ -87,8 +105,8 @@ export async function PUT(request: Request, { params }: RouteParams) {
       args: [id],
     });
     return NextResponse.json(sectionFromRow(row.rows[0] as unknown as SectionRow));
-  } catch (error) {
-    console.error("Failed to update section:", error);
+  } catch (err) {
+    console.error("Failed to update section:", err);
     return NextResponse.json(
       { error: "Failed to update section" },
       { status: 500 }
@@ -97,9 +115,17 @@ export async function PUT(request: Request, { params }: RouteParams) {
 }
 
 export async function DELETE(_request: Request, { params }: RouteParams) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { id } = await params;
+
+    // Verify user owns the section
+    if (!(await userOwnsSection(session.user.id, id))) {
+      return NextResponse.json({ error: "Section not found" }, { status: 404 });
+    }
 
     const existing = await db.execute({
       sql: "SELECT * FROM sections WHERE id = ?",
@@ -116,8 +142,8 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     });
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Failed to delete section:", error);
+  } catch (err) {
+    console.error("Failed to delete section:", err);
     return NextResponse.json(
       { error: "Failed to delete section" },
       { status: 500 }

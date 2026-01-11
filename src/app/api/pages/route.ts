@@ -3,8 +3,12 @@ import { nanoid } from "nanoid";
 import { db, initializeSchema } from "@/lib/db";
 import { createPageSchema } from "@/lib/validators";
 import { type PageRow, pageFromRow } from "@/types";
+import { requireAuth, userOwnsProject } from "@/lib/auth/api-auth";
 
 export async function GET(request: Request) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const { searchParams } = new URL(request.url);
@@ -17,14 +21,19 @@ export async function GET(request: Request) {
       );
     }
 
+    // Verify user owns the project
+    if (!(await userOwnsProject(session.user.id, projectId))) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
     const result = await db.execute({
       sql: "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order, created_at",
       args: [projectId],
     });
     const pages = result.rows.map((row) => pageFromRow(row as unknown as PageRow));
     return NextResponse.json(pages);
-  } catch (error) {
-    console.error("Failed to fetch pages:", error);
+  } catch (err) {
+    console.error("Failed to fetch pages:", err);
     return NextResponse.json(
       { error: "Failed to fetch pages" },
       { status: 500 }
@@ -33,6 +42,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const { session, error } = await requireAuth();
+  if (error) return error;
+
   try {
     await initializeSchema();
     const body = await request.json();
@@ -48,12 +60,8 @@ export async function POST(request: Request) {
     const { projectId, name, description } = result.data;
     const id = nanoid();
 
-    // Verify project exists
-    const project = await db.execute({
-      sql: "SELECT id FROM projects WHERE id = ?",
-      args: [projectId],
-    });
-    if (project.rows.length === 0) {
+    // Verify user owns the project
+    if (!(await userOwnsProject(session.user.id, projectId))) {
       return NextResponse.json(
         { error: "Project not found" },
         { status: 404 }
@@ -77,8 +85,8 @@ export async function POST(request: Request) {
       args: [id],
     });
     return NextResponse.json(pageFromRow(row.rows[0] as unknown as PageRow), { status: 201 });
-  } catch (error) {
-    console.error("Failed to create page:", error);
+  } catch (err) {
+    console.error("Failed to create page:", err);
     return NextResponse.json(
       { error: "Failed to create page" },
       { status: 500 }
