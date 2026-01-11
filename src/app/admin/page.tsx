@@ -56,7 +56,7 @@ export default async function AdminDashboard() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold sm:text-3xl">Dashboard</h1>
           <p className="text-sm text-muted-foreground sm:text-base">

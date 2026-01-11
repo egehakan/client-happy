@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
@@ -45,26 +44,22 @@ export function Logo({
   const logoContent =
     variant === "full" ? (
       <div className="flex flex-col">
-        <Image
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
           src={isDark ? "/logo/logo-white.png" : "/logo/logo.png"}
           alt="ClientHappy"
-          width={140}
-          height={32}
-          className="h-8 w-auto"
-          priority
+          className="h-8 w-auto object-contain"
         />
         {showSubtitle && (
           <span className="text-xs text-muted-foreground">{subtitle}</span>
         )}
       </div>
     ) : (
-      <Image
+      /* eslint-disable-next-line @next/next/no-img-element */
+      <img
         src="/logo/icon.png"
         alt="ClientHappy"
-        width={32}
-        height={32}
-        className="h-8 w-8"
-        priority
+        className="h-8 w-8 object-contain"
       />
     );
 

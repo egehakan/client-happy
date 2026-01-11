@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
-  SheetHeader,
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
@@ -37,12 +36,11 @@ export function MobileHeader() {
             <span className="sr-only">Toggle menu</span>
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-0">
-          <SheetHeader className="border-b p-4">
-            <SheetTitle className="text-left">
-              <Logo showSubtitle subtitle="Admin Panel" />
-            </SheetTitle>
-          </SheetHeader>
+        <SheetContent side="left" className="w-64 gap-0 p-0">
+          <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+          <div className="border-b p-4">
+            <Logo href="/admin" />
+          </div>
           <nav className="flex-1 space-y-1 p-4">
             {navItems.map((item) => {
               const isActive =
@@ -73,7 +71,7 @@ export function MobileHeader() {
           </div>
         </SheetContent>
       </Sheet>
-      <Logo variant="icon" />
+      <Logo />
       <ThemeToggle />
     </header>
   );

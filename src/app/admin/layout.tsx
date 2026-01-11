@@ -11,7 +11,7 @@ export default function AdminLayout({
     <div className="flex min-h-screen flex-col md:flex-row">
       <MobileHeader />
       <AdminSidebar />
-      <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
+      <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">{children}</main>
       <Toaster />
     </div>
   );

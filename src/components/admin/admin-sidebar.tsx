@@ -20,7 +20,7 @@ export function AdminSidebar() {
 
   return (
     <aside className="sticky top-0 hidden h-screen w-64 flex-col border-r bg-muted/30 p-4 md:flex">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between">
         <Logo subtitle="Admin Panel" href="/admin" />
         <ThemeToggle />
       </div>
