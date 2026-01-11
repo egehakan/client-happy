@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { type InValue } from "@libsql/client";
 import { unlink } from "fs/promises";
 import { join } from "path";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { updateScreenshotSchema } from "@/lib/validators";
 import { type ScreenshotRow, screenshotFromRow } from "@/types";
 
@@ -11,21 +12,22 @@ interface RouteParams {
 
 export async function GET(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const row = db
-      .prepare("SELECT * FROM screenshots WHERE id = ?")
-      .get(id) as ScreenshotRow | undefined;
+    const result = await db.execute({
+      sql: "SELECT * FROM screenshots WHERE id = ?",
+      args: [id],
+    });
 
-    if (!row) {
+    if (result.rows.length === 0) {
       return NextResponse.json(
         { error: "Screenshot not found" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(screenshotFromRow(row));
+    return NextResponse.json(screenshotFromRow(result.rows[0] as unknown as ScreenshotRow));
   } catch (error) {
     console.error("Failed to fetch screenshot:", error);
     return NextResponse.json(
@@ -37,6 +39,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
     const body = await request.json();
     const result = updateScreenshotSchema.safeParse(body);
@@ -48,13 +51,12 @@ export async function PUT(request: Request, { params }: RouteParams) {
       );
     }
 
-    const db = getDb();
+    const existing = await db.execute({
+      sql: "SELECT * FROM screenshots WHERE id = ?",
+      args: [id],
+    });
 
-    const existing = db
-      .prepare("SELECT * FROM screenshots WHERE id = ?")
-      .get(id) as ScreenshotRow | undefined;
-
-    if (!existing) {
+    if (existing.rows.length === 0) {
       return NextResponse.json(
         { error: "Screenshot not found" },
         { status: 404 }
@@ -63,7 +65,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
     const updates = result.data;
     const fields: string[] = [];
-    const values: unknown[] = [];
+    const values: InValue[] = [];
 
     if (updates.title !== undefined) {
       fields.push("title = ?");
@@ -82,15 +84,17 @@ export async function PUT(request: Request, { params }: RouteParams) {
       fields.push("updated_at = datetime('now')");
       values.push(id);
 
-      db.prepare(`UPDATE screenshots SET ${fields.join(", ")} WHERE id = ?`).run(
-        ...values
-      );
+      await db.execute({
+        sql: `UPDATE screenshots SET ${fields.join(", ")} WHERE id = ?`,
+        args: values,
+      });
     }
 
-    const row = db
-      .prepare("SELECT * FROM screenshots WHERE id = ?")
-      .get(id) as ScreenshotRow;
-    return NextResponse.json(screenshotFromRow(row));
+    const row = await db.execute({
+      sql: "SELECT * FROM screenshots WHERE id = ?",
+      args: [id],
+    });
+    return NextResponse.json(screenshotFromRow(row.rows[0] as unknown as ScreenshotRow));
   } catch (error) {
     console.error("Failed to update screenshot:", error);
     return NextResponse.json(
@@ -102,31 +106,37 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
 export async function DELETE(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const existing = db
-      .prepare("SELECT * FROM screenshots WHERE id = ?")
-      .get(id) as ScreenshotRow | undefined;
+    const existing = await db.execute({
+      sql: "SELECT * FROM screenshots WHERE id = ?",
+      args: [id],
+    });
 
-    if (!existing) {
+    if (existing.rows.length === 0) {
       return NextResponse.json(
         { error: "Screenshot not found" },
         { status: 404 }
       );
     }
 
+    const row = existing.rows[0] as unknown as ScreenshotRow;
+
     // Delete local file if exists
-    if (existing.source_type === "local" && existing.file_path) {
+    if (row.source_type === "local" && row.file_path) {
       try {
-        const filePath = join(process.cwd(), "public", existing.file_path);
+        const filePath = join(process.cwd(), "public", row.file_path);
         await unlink(filePath);
       } catch {
         // File may not exist, ignore error
       }
     }
 
-    db.prepare("DELETE FROM screenshots WHERE id = ?").run(id);
+    await db.execute({
+      sql: "DELETE FROM screenshots WHERE id = ?",
+      args: [id],
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

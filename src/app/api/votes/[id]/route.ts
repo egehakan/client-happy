@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { type VoteRow, voteFromRow } from "@/types";
 
 interface RouteParams {
@@ -8,18 +8,19 @@ interface RouteParams {
 
 export async function GET(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const row = db
-      .prepare("SELECT * FROM votes WHERE id = ?")
-      .get(id) as VoteRow | undefined;
+    const result = await db.execute({
+      sql: "SELECT * FROM votes WHERE id = ?",
+      args: [id],
+    });
 
-    if (!row) {
+    if (result.rows.length === 0) {
       return NextResponse.json({ error: "Vote not found" }, { status: 404 });
     }
 
-    return NextResponse.json(voteFromRow(row));
+    return NextResponse.json(voteFromRow(result.rows[0] as unknown as VoteRow));
   } catch (error) {
     console.error("Failed to fetch vote:", error);
     return NextResponse.json(
@@ -31,18 +32,22 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
 export async function DELETE(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const existing = db
-      .prepare("SELECT * FROM votes WHERE id = ?")
-      .get(id) as VoteRow | undefined;
+    const existing = await db.execute({
+      sql: "SELECT * FROM votes WHERE id = ?",
+      args: [id],
+    });
 
-    if (!existing) {
+    if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Vote not found" }, { status: 404 });
     }
 
-    db.prepare("DELETE FROM votes WHERE id = ?").run(id);
+    await db.execute({
+      sql: "DELETE FROM votes WHERE id = ?",
+      args: [id],
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

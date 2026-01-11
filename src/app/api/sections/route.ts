@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { createSectionSchema } from "@/lib/validators";
 import { type SectionRow, sectionFromRow } from "@/types";
 
 export async function GET(request: Request) {
   try {
+    await initializeSchema();
     const { searchParams } = new URL(request.url);
     const pageId = searchParams.get("pageId");
 
@@ -16,13 +17,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const db = getDb();
-    const rows = db
-      .prepare(
-        "SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order, created_at"
-      )
-      .all(pageId) as SectionRow[];
-    const sections = rows.map(sectionFromRow);
+    const result = await db.execute({
+      sql: "SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order, created_at",
+      args: [pageId],
+    });
+    const sections = result.rows.map((row) => sectionFromRow(row as unknown as SectionRow));
     return NextResponse.json(sections);
   } catch (error) {
     console.error("Failed to fetch sections:", error);
@@ -35,6 +34,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await initializeSchema();
     const body = await request.json();
     const result = createSectionSchema.safeParse(body);
 
@@ -48,31 +48,32 @@ export async function POST(request: Request) {
     const { pageId, name, description } = result.data;
     const id = nanoid();
 
-    const db = getDb();
-
     // Verify page exists
-    const page = db.prepare("SELECT id FROM pages WHERE id = ?").get(pageId);
-    if (!page) {
+    const page = await db.execute({
+      sql: "SELECT id FROM pages WHERE id = ?",
+      args: [pageId],
+    });
+    if (page.rows.length === 0) {
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
     // Get next sort order
-    const maxOrder = db
-      .prepare(
-        "SELECT COALESCE(MAX(sort_order), -1) as max_order FROM sections WHERE page_id = ?"
-      )
-      .get(pageId) as { max_order: number };
+    const maxOrderResult = await db.execute({
+      sql: "SELECT COALESCE(MAX(sort_order), -1) as max_order FROM sections WHERE page_id = ?",
+      args: [pageId],
+    });
+    const maxOrder = (maxOrderResult.rows[0] as unknown as { max_order: number }).max_order;
 
-    const stmt = db.prepare(`
-      INSERT INTO sections (id, page_id, name, description, sort_order)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, pageId, name, description ?? null, maxOrder.max_order + 1);
+    await db.execute({
+      sql: `INSERT INTO sections (id, page_id, name, description, sort_order) VALUES (?, ?, ?, ?, ?)`,
+      args: [id, pageId, name, description ?? null, maxOrder + 1],
+    });
 
-    const row = db
-      .prepare("SELECT * FROM sections WHERE id = ?")
-      .get(id) as SectionRow;
-    return NextResponse.json(sectionFromRow(row), { status: 201 });
+    const row = await db.execute({
+      sql: "SELECT * FROM sections WHERE id = ?",
+      args: [id],
+    });
+    return NextResponse.json(sectionFromRow(row.rows[0] as unknown as SectionRow), { status: 201 });
   } catch (error) {
     console.error("Failed to create section:", error);
     return NextResponse.json(

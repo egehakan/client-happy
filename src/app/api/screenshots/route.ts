@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { createScreenshotSchema } from "@/lib/validators";
 import { type ScreenshotRow, screenshotFromRow } from "@/types";
 
 export async function GET(request: Request) {
   try {
+    await initializeSchema();
     const { searchParams } = new URL(request.url);
     const sectionId = searchParams.get("sectionId");
 
@@ -16,13 +17,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const db = getDb();
-    const rows = db
-      .prepare(
-        "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order, created_at"
-      )
-      .all(sectionId) as ScreenshotRow[];
-    const screenshots = rows.map(screenshotFromRow);
+    const result = await db.execute({
+      sql: "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order, created_at",
+      args: [sectionId],
+    });
+    const screenshots = result.rows.map((row) => screenshotFromRow(row as unknown as ScreenshotRow));
     return NextResponse.json(screenshots);
   } catch (error) {
     console.error("Failed to fetch screenshots:", error);
@@ -35,6 +34,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await initializeSchema();
     const body = await request.json();
     const result = createScreenshotSchema.safeParse(body);
 
@@ -49,13 +49,12 @@ export async function POST(request: Request) {
       result.data;
     const id = nanoid();
 
-    const db = getDb();
-
     // Verify section exists
-    const section = db
-      .prepare("SELECT id FROM sections WHERE id = ?")
-      .get(sectionId);
-    if (!section) {
+    const section = await db.execute({
+      sql: "SELECT id FROM sections WHERE id = ?",
+      args: [sectionId],
+    });
+    if (section.rows.length === 0) {
       return NextResponse.json(
         { error: "Section not found" },
         { status: 404 }
@@ -63,31 +62,31 @@ export async function POST(request: Request) {
     }
 
     // Get next sort order
-    const maxOrder = db
-      .prepare(
-        "SELECT COALESCE(MAX(sort_order), -1) as max_order FROM screenshots WHERE section_id = ?"
-      )
-      .get(sectionId) as { max_order: number };
+    const maxOrderResult = await db.execute({
+      sql: "SELECT COALESCE(MAX(sort_order), -1) as max_order FROM screenshots WHERE section_id = ?",
+      args: [sectionId],
+    });
+    const maxOrder = (maxOrderResult.rows[0] as unknown as { max_order: number }).max_order;
 
-    const stmt = db.prepare(`
-      INSERT INTO screenshots (id, section_id, title, description, source_type, file_path, external_url, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      id,
-      sectionId,
-      title ?? null,
-      description ?? null,
-      sourceType,
-      filePath ?? null,
-      externalUrl ?? null,
-      maxOrder.max_order + 1
-    );
+    await db.execute({
+      sql: `INSERT INTO screenshots (id, section_id, title, description, source_type, file_path, external_url, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        sectionId,
+        title ?? null,
+        description ?? null,
+        sourceType,
+        filePath ?? null,
+        externalUrl ?? null,
+        maxOrder + 1,
+      ],
+    });
 
-    const row = db
-      .prepare("SELECT * FROM screenshots WHERE id = ?")
-      .get(id) as ScreenshotRow;
-    return NextResponse.json(screenshotFromRow(row), { status: 201 });
+    const row = await db.execute({
+      sql: "SELECT * FROM screenshots WHERE id = ?",
+      args: [id],
+    });
+    return NextResponse.json(screenshotFromRow(row.rows[0] as unknown as ScreenshotRow), { status: 201 });
   } catch (error) {
     console.error("Failed to create screenshot:", error);
     return NextResponse.json(

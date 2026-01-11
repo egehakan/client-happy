@@ -1,20 +1,18 @@
 import Link from "next/link";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { type ProjectRow, projectFromRow } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { ProjectCard } from "@/components/admin/project-card";
 
-function getProjects() {
-  const db = getDb();
-  const rows = db
-    .prepare("SELECT * FROM projects ORDER BY created_at DESC")
-    .all() as ProjectRow[];
-  return rows.map(projectFromRow);
+async function getProjects() {
+  await initializeSchema();
+  const result = await db.execute("SELECT * FROM projects ORDER BY created_at DESC");
+  return result.rows.map((row) => projectFromRow(row as unknown as ProjectRow));
 }
 
-export default function ProjectsPage() {
-  const projects = getProjects();
+export default async function ProjectsPage() {
+  const projects = await getProjects();
 
   return (
     <div>

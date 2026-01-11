@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import {
   type ProjectRow,
   type PageRow,
@@ -51,13 +51,12 @@ interface ProjectWithData {
   totalVotes: number;
 }
 
-function getGroupedVotes(): ProjectWithData[] {
-  const db = getDb();
+async function getGroupedVotes(): Promise<ProjectWithData[]> {
+  await initializeSchema();
 
   // Get all projects
-  const projectRows = db
-    .prepare("SELECT * FROM projects ORDER BY name")
-    .all() as ProjectRow[];
+  const projectResult = await db.execute("SELECT * FROM projects ORDER BY name");
+  const projectRows = projectResult.rows as unknown as ProjectRow[];
 
   const result: ProjectWithData[] = [];
 
@@ -66,9 +65,11 @@ function getGroupedVotes(): ProjectWithData[] {
     let totalVotes = 0;
 
     // Get pages for this project
-    const pageRows = db
-      .prepare("SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order")
-      .all(project.id) as PageRow[];
+    const pageResult = await db.execute({
+      sql: "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order",
+      args: [project.id],
+    });
+    const pageRows = pageResult.rows as unknown as PageRow[];
 
     const pages: PageWithSections[] = [];
 
@@ -76,9 +77,11 @@ function getGroupedVotes(): ProjectWithData[] {
       const page = pageFromRow(pageRow);
 
       // Get sections for this page
-      const sectionRows = db
-        .prepare("SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order")
-        .all(page.id) as SectionRow[];
+      const sectionResult = await db.execute({
+        sql: "SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order",
+        args: [page.id],
+      });
+      const sectionRows = sectionResult.rows as unknown as SectionRow[];
 
       const sections: SectionWithScreenshots[] = [];
 
@@ -86,11 +89,11 @@ function getGroupedVotes(): ProjectWithData[] {
         const section = sectionFromRow(sectionRow);
 
         // Get screenshots for this section
-        const screenshotRows = db
-          .prepare(
-            "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order"
-          )
-          .all(section.id) as ScreenshotRow[];
+        const screenshotResult = await db.execute({
+          sql: "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order",
+          args: [section.id],
+        });
+        const screenshotRows = screenshotResult.rows as unknown as ScreenshotRow[];
 
         const screenshots: ScreenshotWithVotes[] = [];
 
@@ -98,11 +101,11 @@ function getGroupedVotes(): ProjectWithData[] {
           const screenshot = screenshotFromRow(screenshotRow);
 
           // Get votes for this screenshot
-          const voteRows = db
-            .prepare(
-              "SELECT * FROM votes WHERE screenshot_id = ? ORDER BY created_at DESC"
-            )
-            .all(screenshot.id) as VoteRow[];
+          const voteResult = await db.execute({
+            sql: "SELECT * FROM votes WHERE screenshot_id = ? ORDER BY created_at DESC",
+            args: [screenshot.id],
+          });
+          const voteRows = voteResult.rows as unknown as VoteRow[];
 
           const votes = voteRows.map(voteFromRow);
           totalVotes += votes.length;
@@ -273,8 +276,8 @@ function ScreenshotCard({ data }: { data: ScreenshotWithVotes }) {
   );
 }
 
-export default function VotesPage() {
-  const groupedData = getGroupedVotes();
+export default async function VotesPage() {
+  const groupedData = await getGroupedVotes();
 
   const totalVotes = groupedData.reduce((sum, p) => sum + p.totalVotes, 0);
 

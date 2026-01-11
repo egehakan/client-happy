@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { type InValue } from "@libsql/client";
+import { db, initializeSchema } from "@/lib/db";
 import { updateProjectSchema } from "@/lib/validators";
 import {
   type ProjectRow,
@@ -21,63 +22,72 @@ interface RouteParams {
 
 export async function GET(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const projectRow = db
-      .prepare("SELECT * FROM projects WHERE id = ? OR slug = ?")
-      .get(id, id) as ProjectRow | undefined;
+    const projectResult = await db.execute({
+      sql: "SELECT * FROM projects WHERE id = ? OR slug = ?",
+      args: [id, id],
+    });
 
-    if (!projectRow) {
+    if (projectResult.rows.length === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    const project = projectFromRow(projectRow);
+    const project = projectFromRow(projectResult.rows[0] as unknown as ProjectRow);
 
-    // Fetch pages with sections and screenshots
-    const pageRows = db
-      .prepare("SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order")
-      .all(project.id) as PageRow[];
+    // Fetch pages
+    const pageResult = await db.execute({
+      sql: "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order",
+      args: [project.id],
+    });
 
-    const pagesWithSections = pageRows.map((pageRow) => {
-      const page = pageFromRow(pageRow);
+    const pagesWithSections = await Promise.all(
+      pageResult.rows.map(async (pageRow) => {
+        const page = pageFromRow(pageRow as unknown as PageRow);
 
-      const sectionRows = db
-        .prepare("SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order")
-        .all(page.id) as SectionRow[];
-
-      const sectionsWithScreenshots = sectionRows.map((sectionRow) => {
-        const section = sectionFromRow(sectionRow);
-
-        const screenshotRows = db
-          .prepare(
-            "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order"
-          )
-          .all(section.id) as ScreenshotRow[];
-
-        const screenshotsWithVotes = screenshotRows.map((screenshotRow) => {
-          const screenshot = screenshotFromRow(screenshotRow);
-
-          const voteRows = db
-            .prepare("SELECT * FROM votes WHERE screenshot_id = ?")
-            .all(screenshot.id) as VoteRow[];
-
-          const votes = voteRows.map(voteFromRow);
-
-          const votesSummary = {
-            yes: votes.filter((v) => v.vote === "yes").length,
-            mid: votes.filter((v) => v.vote === "mid").length,
-            no: votes.filter((v) => v.vote === "no").length,
-          };
-
-          return { ...screenshot, votes, votesSummary };
+        const sectionResult = await db.execute({
+          sql: "SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order",
+          args: [page.id],
         });
 
-        return { ...section, screenshots: screenshotsWithVotes };
-      });
+        const sectionsWithScreenshots = await Promise.all(
+          sectionResult.rows.map(async (sectionRow) => {
+            const section = sectionFromRow(sectionRow as unknown as SectionRow);
 
-      return { ...page, sections: sectionsWithScreenshots };
-    });
+            const screenshotResult = await db.execute({
+              sql: "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order",
+              args: [section.id],
+            });
+
+            const screenshotsWithVotes = await Promise.all(
+              screenshotResult.rows.map(async (screenshotRow) => {
+                const screenshot = screenshotFromRow(screenshotRow as unknown as ScreenshotRow);
+
+                const voteResult = await db.execute({
+                  sql: "SELECT * FROM votes WHERE screenshot_id = ?",
+                  args: [screenshot.id],
+                });
+
+                const votes = voteResult.rows.map((v) => voteFromRow(v as unknown as VoteRow));
+
+                const votesSummary = {
+                  yes: votes.filter((v) => v.vote === "yes").length,
+                  mid: votes.filter((v) => v.vote === "mid").length,
+                  no: votes.filter((v) => v.vote === "no").length,
+                };
+
+                return { ...screenshot, votes, votesSummary };
+              })
+            );
+
+            return { ...section, screenshots: screenshotsWithVotes };
+          })
+        );
+
+        return { ...page, sections: sectionsWithScreenshots };
+      })
+    );
 
     const result: ProjectWithPages = {
       ...project,
@@ -96,6 +106,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
     const body = await request.json();
     const result = updateProjectSchema.safeParse(body);
@@ -107,30 +118,29 @@ export async function PUT(request: Request, { params }: RouteParams) {
       );
     }
 
-    const db = getDb();
+    const existing = await db.execute({
+      sql: "SELECT * FROM projects WHERE id = ?",
+      args: [id],
+    });
 
-    const existing = db
-      .prepare("SELECT * FROM projects WHERE id = ?")
-      .get(id) as ProjectRow | undefined;
-
-    if (!existing) {
+    if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
     const updates = result.data;
     const fields: string[] = [];
-    const values: unknown[] = [];
+    const values: InValue[] = [];
 
     if (updates.name !== undefined) {
       fields.push("name = ?");
       values.push(updates.name);
     }
     if (updates.slug !== undefined) {
-      // Check slug uniqueness
-      const existingSlug = db
-        .prepare("SELECT id FROM projects WHERE slug = ? AND id != ?")
-        .get(updates.slug, id);
-      if (existingSlug) {
+      const existingSlug = await db.execute({
+        sql: "SELECT id FROM projects WHERE slug = ? AND id != ?",
+        args: [updates.slug, id],
+      });
+      if (existingSlug.rows.length > 0) {
         return NextResponse.json(
           { error: "Slug already exists" },
           { status: 400 }
@@ -152,15 +162,17 @@ export async function PUT(request: Request, { params }: RouteParams) {
       fields.push("updated_at = datetime('now')");
       values.push(id);
 
-      db.prepare(
-        `UPDATE projects SET ${fields.join(", ")} WHERE id = ?`
-      ).run(...values);
+      await db.execute({
+        sql: `UPDATE projects SET ${fields.join(", ")} WHERE id = ?`,
+        args: values,
+      });
     }
 
-    const row = db
-      .prepare("SELECT * FROM projects WHERE id = ?")
-      .get(id) as ProjectRow;
-    return NextResponse.json(projectFromRow(row));
+    const row = await db.execute({
+      sql: "SELECT * FROM projects WHERE id = ?",
+      args: [id],
+    });
+    return NextResponse.json(projectFromRow(row.rows[0] as unknown as ProjectRow));
   } catch (error) {
     console.error("Failed to update project:", error);
     return NextResponse.json(
@@ -172,19 +184,50 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
 export async function DELETE(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const existing = db
-      .prepare("SELECT * FROM projects WHERE id = ?")
-      .get(id) as ProjectRow | undefined;
+    const existing = await db.execute({
+      sql: "SELECT * FROM projects WHERE id = ?",
+      args: [id],
+    });
 
-    if (!existing) {
+    if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Delete project (cascades to pages, sections, screenshots, votes)
-    db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+    // Delete in correct order due to foreign keys
+    await db.execute({
+      sql: `DELETE FROM votes WHERE screenshot_id IN (
+        SELECT s.id FROM screenshots s
+        JOIN sections sec ON s.section_id = sec.id
+        JOIN pages p ON sec.page_id = p.id
+        WHERE p.project_id = ?
+      )`,
+      args: [id],
+    });
+    await db.execute({
+      sql: `DELETE FROM screenshots WHERE section_id IN (
+        SELECT sec.id FROM sections sec
+        JOIN pages p ON sec.page_id = p.id
+        WHERE p.project_id = ?
+      )`,
+      args: [id],
+    });
+    await db.execute({
+      sql: `DELETE FROM sections WHERE page_id IN (
+        SELECT id FROM pages WHERE project_id = ?
+      )`,
+      args: [id],
+    });
+    await db.execute({
+      sql: "DELETE FROM pages WHERE project_id = ?",
+      args: [id],
+    });
+    await db.execute({
+      sql: "DELETE FROM projects WHERE id = ?",
+      args: [id],
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

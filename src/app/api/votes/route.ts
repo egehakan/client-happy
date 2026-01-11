@@ -1,46 +1,45 @@
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { createVoteSchema, submitVotesSchema } from "@/lib/validators";
 import { type VoteRow, voteFromRow } from "@/types";
 
 export async function GET(request: Request) {
   try {
+    await initializeSchema();
     const { searchParams } = new URL(request.url);
     const screenshotId = searchParams.get("screenshotId");
     const projectId = searchParams.get("projectId");
 
-    const db = getDb();
-
     if (screenshotId) {
-      const rows = db
-        .prepare(
-          "SELECT * FROM votes WHERE screenshot_id = ? ORDER BY created_at DESC"
-        )
-        .all(screenshotId) as VoteRow[];
-      return NextResponse.json(rows.map(voteFromRow));
+      const result = await db.execute({
+        sql: "SELECT * FROM votes WHERE screenshot_id = ? ORDER BY created_at DESC",
+        args: [screenshotId],
+      });
+      return NextResponse.json(result.rows.map((row) => voteFromRow(row as unknown as VoteRow)));
     }
 
     if (projectId) {
       // Get all votes for a project (join through sections -> pages -> project)
-      const rows = db
-        .prepare(`
+      const result = await db.execute({
+        sql: `
           SELECT v.* FROM votes v
           JOIN screenshots s ON v.screenshot_id = s.id
           JOIN sections sec ON s.section_id = sec.id
           JOIN pages p ON sec.page_id = p.id
           WHERE p.project_id = ?
           ORDER BY v.created_at DESC
-        `)
-        .all(projectId) as VoteRow[];
-      return NextResponse.json(rows.map(voteFromRow));
+        `,
+        args: [projectId],
+      });
+      return NextResponse.json(result.rows.map((row) => voteFromRow(row as unknown as VoteRow)));
     }
 
     // Return all votes (for admin overview)
-    const rows = db
-      .prepare("SELECT * FROM votes ORDER BY created_at DESC LIMIT 100")
-      .all() as VoteRow[];
-    return NextResponse.json(rows.map(voteFromRow));
+    const result = await db.execute(
+      "SELECT * FROM votes ORDER BY created_at DESC LIMIT 100"
+    );
+    return NextResponse.json(result.rows.map((row) => voteFromRow(row as unknown as VoteRow)));
   } catch (error) {
     console.error("Failed to fetch votes:", error);
     return NextResponse.json(
@@ -52,6 +51,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await initializeSchema();
     const body = await request.json();
 
     // Check if it's a bulk submission
@@ -66,34 +66,24 @@ export async function POST(request: Request) {
       }
 
       const { votes, voterIdentifier } = result.data;
-      const db = getDb();
+      const insertedVotes: VoteRow[] = [];
 
-      const insertStmt = db.prepare(`
-        INSERT INTO votes (id, screenshot_id, vote, comment, voter_identifier)
-        VALUES (?, ?, ?, ?, ?)
-      `);
+      // Insert votes one by one (Turso doesn't support transactions the same way)
+      for (const v of votes) {
+        const id = nanoid();
+        await db.execute({
+          sql: `INSERT INTO votes (id, screenshot_id, vote, comment, voter_identifier) VALUES (?, ?, ?, ?, ?)`,
+          args: [id, v.screenshotId, v.vote, v.comment ?? null, voterIdentifier ?? null],
+        });
 
-      const insertMany = db.transaction((votesToInsert) => {
-        const insertedVotes: VoteRow[] = [];
-        for (const v of votesToInsert) {
-          const id = nanoid();
-          insertStmt.run(
-            id,
-            v.screenshotId,
-            v.vote,
-            v.comment ?? null,
-            voterIdentifier ?? null
-          );
-          const row = db
-            .prepare("SELECT * FROM votes WHERE id = ?")
-            .get(id) as VoteRow;
-          insertedVotes.push(row);
-        }
-        return insertedVotes;
-      });
+        const row = await db.execute({
+          sql: "SELECT * FROM votes WHERE id = ?",
+          args: [id],
+        });
+        insertedVotes.push(row.rows[0] as unknown as VoteRow);
+      }
 
-      const insertedRows = insertMany(votes);
-      return NextResponse.json(insertedRows.map(voteFromRow), { status: 201 });
+      return NextResponse.json(insertedVotes.map(voteFromRow), { status: 201 });
     }
 
     // Single vote
@@ -109,29 +99,28 @@ export async function POST(request: Request) {
     const { screenshotId, vote, comment, voterIdentifier } = result.data;
     const id = nanoid();
 
-    const db = getDb();
-
     // Verify screenshot exists
-    const screenshot = db
-      .prepare("SELECT id FROM screenshots WHERE id = ?")
-      .get(screenshotId);
-    if (!screenshot) {
+    const screenshot = await db.execute({
+      sql: "SELECT id FROM screenshots WHERE id = ?",
+      args: [screenshotId],
+    });
+    if (screenshot.rows.length === 0) {
       return NextResponse.json(
         { error: "Screenshot not found" },
         { status: 404 }
       );
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO votes (id, screenshot_id, vote, comment, voter_identifier)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, screenshotId, vote, comment ?? null, voterIdentifier ?? null);
+    await db.execute({
+      sql: `INSERT INTO votes (id, screenshot_id, vote, comment, voter_identifier) VALUES (?, ?, ?, ?, ?)`,
+      args: [id, screenshotId, vote, comment ?? null, voterIdentifier ?? null],
+    });
 
-    const row = db
-      .prepare("SELECT * FROM votes WHERE id = ?")
-      .get(id) as VoteRow;
-    return NextResponse.json(voteFromRow(row), { status: 201 });
+    const row = await db.execute({
+      sql: "SELECT * FROM votes WHERE id = ?",
+      args: [id],
+    });
+    return NextResponse.json(voteFromRow(row.rows[0] as unknown as VoteRow), { status: 201 });
   } catch (error) {
     console.error("Failed to create vote:", error);
     return NextResponse.json(

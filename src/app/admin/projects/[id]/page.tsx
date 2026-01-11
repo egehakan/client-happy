@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import {
   type ProjectRow,
   type PageRow,
@@ -13,7 +13,7 @@ import {
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Copy, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 import { ProjectDetails } from "@/components/admin/project-details";
 import { PagesManager } from "@/components/admin/pages-manager";
 import { ScreenshotsManager } from "@/components/admin/screenshots-manager";
@@ -23,52 +23,60 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-function getProjectData(id: string) {
-  const db = getDb();
+async function getProjectData(id: string) {
+  await initializeSchema();
 
-  const projectRow = db
-    .prepare("SELECT * FROM projects WHERE id = ?")
-    .get(id) as ProjectRow | undefined;
-
-  if (!projectRow) return null;
-
-  const project = projectFromRow(projectRow);
-
-  const pageRows = db
-    .prepare("SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order")
-    .all(id) as PageRow[];
-
-  const pagesWithSections = pageRows.map((pageRow) => {
-    const page = pageFromRow(pageRow);
-
-    const sectionRows = db
-      .prepare("SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order")
-      .all(page.id) as SectionRow[];
-
-    const sectionsWithScreenshots = sectionRows.map((sectionRow) => {
-      const section = sectionFromRow(sectionRow);
-
-      const screenshotRows = db
-        .prepare(
-          "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order"
-        )
-        .all(section.id) as ScreenshotRow[];
-
-      return {
-        ...section,
-        screenshots: screenshotRows.map(screenshotFromRow),
-      };
-    });
-
-    return { ...page, sections: sectionsWithScreenshots };
+  const projectResult = await db.execute({
+    sql: "SELECT * FROM projects WHERE id = ?",
+    args: [id],
   });
+
+  if (projectResult.rows.length === 0) return null;
+
+  const project = projectFromRow(projectResult.rows[0] as unknown as ProjectRow);
+
+  const pageResult = await db.execute({
+    sql: "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order",
+    args: [id],
+  });
+
+  const pagesWithSections = await Promise.all(
+    pageResult.rows.map(async (pageRow) => {
+      const page = pageFromRow(pageRow as unknown as PageRow);
+
+      const sectionResult = await db.execute({
+        sql: "SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order",
+        args: [page.id],
+      });
+
+      const sectionsWithScreenshots = await Promise.all(
+        sectionResult.rows.map(async (sectionRow) => {
+          const section = sectionFromRow(sectionRow as unknown as SectionRow);
+
+          const screenshotResult = await db.execute({
+            sql: "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order",
+            args: [section.id],
+          });
+
+          return {
+            ...section,
+            screenshots: screenshotResult.rows.map((r) =>
+              screenshotFromRow(r as unknown as ScreenshotRow)
+            ),
+          };
+        })
+      );
+
+      return { ...page, sections: sectionsWithScreenshots };
+    })
+  );
 
   return { project, pages: pagesWithSections };
 }
 
 export default async function ProjectDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const data = getProjectData(id);
+  const data = await getProjectData(id);
 
   if (!data) notFound();
 

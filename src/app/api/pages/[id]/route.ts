@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { type InValue } from "@libsql/client";
+import { db, initializeSchema } from "@/lib/db";
 import { updatePageSchema } from "@/lib/validators";
 import { type PageRow, pageFromRow } from "@/types";
 
@@ -9,18 +10,19 @@ interface RouteParams {
 
 export async function GET(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const row = db
-      .prepare("SELECT * FROM pages WHERE id = ?")
-      .get(id) as PageRow | undefined;
+    const result = await db.execute({
+      sql: "SELECT * FROM pages WHERE id = ?",
+      args: [id],
+    });
 
-    if (!row) {
+    if (result.rows.length === 0) {
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
-    return NextResponse.json(pageFromRow(row));
+    return NextResponse.json(pageFromRow(result.rows[0] as unknown as PageRow));
   } catch (error) {
     console.error("Failed to fetch page:", error);
     return NextResponse.json(
@@ -32,6 +34,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
 
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
     const body = await request.json();
     const result = updatePageSchema.safeParse(body);
@@ -43,19 +46,18 @@ export async function PUT(request: Request, { params }: RouteParams) {
       );
     }
 
-    const db = getDb();
+    const existing = await db.execute({
+      sql: "SELECT * FROM pages WHERE id = ?",
+      args: [id],
+    });
 
-    const existing = db
-      .prepare("SELECT * FROM pages WHERE id = ?")
-      .get(id) as PageRow | undefined;
-
-    if (!existing) {
+    if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
     const updates = result.data;
     const fields: string[] = [];
-    const values: unknown[] = [];
+    const values: InValue[] = [];
 
     if (updates.name !== undefined) {
       fields.push("name = ?");
@@ -74,15 +76,17 @@ export async function PUT(request: Request, { params }: RouteParams) {
       fields.push("updated_at = datetime('now')");
       values.push(id);
 
-      db.prepare(`UPDATE pages SET ${fields.join(", ")} WHERE id = ?`).run(
-        ...values
-      );
+      await db.execute({
+        sql: `UPDATE pages SET ${fields.join(", ")} WHERE id = ?`,
+        args: values,
+      });
     }
 
-    const row = db
-      .prepare("SELECT * FROM pages WHERE id = ?")
-      .get(id) as PageRow;
-    return NextResponse.json(pageFromRow(row));
+    const row = await db.execute({
+      sql: "SELECT * FROM pages WHERE id = ?",
+      args: [id],
+    });
+    return NextResponse.json(pageFromRow(row.rows[0] as unknown as PageRow));
   } catch (error) {
     console.error("Failed to update page:", error);
     return NextResponse.json(
@@ -94,18 +98,22 @@ export async function PUT(request: Request, { params }: RouteParams) {
 
 export async function DELETE(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
-    const existing = db
-      .prepare("SELECT * FROM pages WHERE id = ?")
-      .get(id) as PageRow | undefined;
+    const existing = await db.execute({
+      sql: "SELECT * FROM pages WHERE id = ?",
+      args: [id],
+    });
 
-    if (!existing) {
+    if (existing.rows.length === 0) {
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
-    db.prepare("DELETE FROM pages WHERE id = ?").run(id);
+    await db.execute({
+      sql: "DELETE FROM pages WHERE id = ?",
+      args: [id],
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

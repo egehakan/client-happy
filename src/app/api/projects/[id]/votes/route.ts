@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -8,22 +8,37 @@ interface RouteParams {
 // DELETE all votes for a project
 export async function DELETE(_request: Request, { params }: RouteParams) {
   try {
+    await initializeSchema();
     const { id } = await params;
-    const db = getDb();
 
     // Verify project exists
-    const project = db
-      .prepare("SELECT id FROM projects WHERE id = ?")
-      .get(id);
+    const project = await db.execute({
+      sql: "SELECT id FROM projects WHERE id = ?",
+      args: [id],
+    });
 
-    if (!project) {
+    if (project.rows.length === 0) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    // Count votes before deletion
+    const countResult = await db.execute({
+      sql: `
+        SELECT COUNT(*) as count FROM votes
+        WHERE screenshot_id IN (
+          SELECT s.id FROM screenshots s
+          JOIN sections sec ON s.section_id = sec.id
+          JOIN pages p ON sec.page_id = p.id
+          WHERE p.project_id = ?
+        )
+      `,
+      args: [id],
+    });
+    const deletedCount = (countResult.rows[0] as unknown as { count: number }).count;
+
     // Delete all votes for screenshots in this project
-    const result = db
-      .prepare(
-        `
+    await db.execute({
+      sql: `
         DELETE FROM votes
         WHERE screenshot_id IN (
           SELECT s.id FROM screenshots s
@@ -31,13 +46,13 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
           JOIN pages p ON sec.page_id = p.id
           WHERE p.project_id = ?
         )
-      `
-      )
-      .run(id);
+      `,
+      args: [id],
+    });
 
     return NextResponse.json({
       success: true,
-      deletedCount: result.changes,
+      deletedCount,
     });
   } catch (error) {
     console.error("Failed to reset votes:", error);

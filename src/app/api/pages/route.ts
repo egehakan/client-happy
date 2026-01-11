@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { createPageSchema } from "@/lib/validators";
 import { type PageRow, pageFromRow } from "@/types";
 
 export async function GET(request: Request) {
   try {
+    await initializeSchema();
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
 
@@ -16,13 +17,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const db = getDb();
-    const rows = db
-      .prepare(
-        "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order, created_at"
-      )
-      .all(projectId) as PageRow[];
-    const pages = rows.map(pageFromRow);
+    const result = await db.execute({
+      sql: "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order, created_at",
+      args: [projectId],
+    });
+    const pages = result.rows.map((row) => pageFromRow(row as unknown as PageRow));
     return NextResponse.json(pages);
   } catch (error) {
     console.error("Failed to fetch pages:", error);
@@ -35,6 +34,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await initializeSchema();
     const body = await request.json();
     const result = createPageSchema.safeParse(body);
 
@@ -48,13 +48,12 @@ export async function POST(request: Request) {
     const { projectId, name, description } = result.data;
     const id = nanoid();
 
-    const db = getDb();
-
     // Verify project exists
-    const project = db
-      .prepare("SELECT id FROM projects WHERE id = ?")
-      .get(projectId);
-    if (!project) {
+    const project = await db.execute({
+      sql: "SELECT id FROM projects WHERE id = ?",
+      args: [projectId],
+    });
+    if (project.rows.length === 0) {
       return NextResponse.json(
         { error: "Project not found" },
         { status: 404 }
@@ -62,22 +61,22 @@ export async function POST(request: Request) {
     }
 
     // Get next sort order
-    const maxOrder = db
-      .prepare(
-        "SELECT COALESCE(MAX(sort_order), -1) as max_order FROM pages WHERE project_id = ?"
-      )
-      .get(projectId) as { max_order: number };
+    const maxOrderResult = await db.execute({
+      sql: "SELECT COALESCE(MAX(sort_order), -1) as max_order FROM pages WHERE project_id = ?",
+      args: [projectId],
+    });
+    const maxOrder = (maxOrderResult.rows[0] as unknown as { max_order: number }).max_order;
 
-    const stmt = db.prepare(`
-      INSERT INTO pages (id, project_id, name, description, sort_order)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(id, projectId, name, description ?? null, maxOrder.max_order + 1);
+    await db.execute({
+      sql: `INSERT INTO pages (id, project_id, name, description, sort_order) VALUES (?, ?, ?, ?, ?)`,
+      args: [id, projectId, name, description ?? null, maxOrder + 1],
+    });
 
-    const row = db
-      .prepare("SELECT * FROM pages WHERE id = ?")
-      .get(id) as PageRow;
-    return NextResponse.json(pageFromRow(row), { status: 201 });
+    const row = await db.execute({
+      sql: "SELECT * FROM pages WHERE id = ?",
+      args: [id],
+    });
+    return NextResponse.json(pageFromRow(row.rows[0] as unknown as PageRow), { status: 201 });
   } catch (error) {
     console.error("Failed to create page:", error);
     return NextResponse.json(

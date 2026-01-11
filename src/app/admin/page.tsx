@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getDb } from "@/lib/db";
+import { db, initializeSchema } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FolderOpen, Image, ThumbsUp, Plus } from "lucide-react";
@@ -10,30 +10,22 @@ interface Stats {
   voteCount: number;
 }
 
-function getStats(): Stats {
-  const db = getDb();
+async function getStats(): Promise<Stats> {
+  await initializeSchema();
 
-  const projectCount = db
-    .prepare("SELECT COUNT(*) as count FROM projects")
-    .get() as { count: number };
-
-  const screenshotCount = db
-    .prepare("SELECT COUNT(*) as count FROM screenshots")
-    .get() as { count: number };
-
-  const voteCount = db
-    .prepare("SELECT COUNT(*) as count FROM votes")
-    .get() as { count: number };
+  const projectResult = await db.execute("SELECT COUNT(*) as count FROM projects");
+  const screenshotResult = await db.execute("SELECT COUNT(*) as count FROM screenshots");
+  const voteResult = await db.execute("SELECT COUNT(*) as count FROM votes");
 
   return {
-    projectCount: projectCount.count,
-    screenshotCount: screenshotCount.count,
-    voteCount: voteCount.count,
+    projectCount: (projectResult.rows[0] as unknown as { count: number }).count,
+    screenshotCount: (screenshotResult.rows[0] as unknown as { count: number }).count,
+    voteCount: (voteResult.rows[0] as unknown as { count: number }).count,
   };
 }
 
-export default function AdminDashboard() {
-  const stats = getStats();
+export default async function AdminDashboard() {
+  const stats = await getStats();
 
   return (
     <div>
