@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
 import { db, initializeSchema } from "@/lib/db";
 import {
   type ProjectRow,
@@ -17,6 +18,7 @@ interface PageProps {
 }
 
 async function getProjectBySlug(slug: string) {
+  noStore();
   await initializeSchema();
 
   const projectResult = await db.execute({
