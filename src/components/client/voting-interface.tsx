@@ -589,12 +589,12 @@ export function VotingInterface({
                   className="sm:size-default"
                 >
                   <Send className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">{isSubmitting ? "Submitting..." : "Submit All Votes"}</span>
+                  <span className="sm:inline">{isSubmitting ? "Submitting..." : "Submit All Votes"}</span>
                   <span className="sm:hidden">{isSubmitting ? "..." : "Submit"}</span>
                 </Button>
               ) : (
                 <Button onClick={goToNext} size="sm" className="sm:size-default">
-                  <span className="hidden sm:inline">Next</span>
+                  <span className="sm:inline">Next</span>
                   <span className="sm:hidden">Next</span>
                   <ChevronRight className="h-4 w-4 sm:ml-2" />
                 </Button>
