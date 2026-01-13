@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { type Project, type Page, type Section, type Screenshot, type Question } from "@/types";
+import { type Project, type Page, type Section, type Screenshot, type Question, type QuestionGroup } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +58,7 @@ interface VotingInterfaceProps {
   pages: PageWithSections[];
   screenshots: ScreenshotWithContext[];
   questions?: Question[];
+  questionGroups?: QuestionGroup[];
   flatPages?: Page[];
   sections?: Section[];
 }
@@ -73,6 +74,7 @@ export function VotingInterface({
   project,
   screenshots,
   questions = [],
+  questionGroups = [],
   flatPages = [],
   sections = [],
 }: VotingInterfaceProps) {
@@ -379,6 +381,7 @@ export function VotingInterface({
       <QuestionnaireInterface
         project={project}
         questions={questions}
+        questionGroups={questionGroups}
         pages={flatPages}
         sections={sections}
         email={voterEmail}

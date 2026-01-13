@@ -80,3 +80,14 @@ export async function userOwnsQuestion(userId: string, questionId: string): Prom
   });
   return result.rows.length > 0;
 }
+
+// Check if user owns a question group (through project)
+export async function userOwnsQuestionGroup(userId: string, groupId: string): Promise<boolean> {
+  const result = await db.execute({
+    sql: `SELECT qg.id FROM question_groups qg
+          JOIN projects p ON qg.project_id = p.id
+          WHERE qg.id = ? AND p.user_id = ?`,
+    args: [groupId, userId],
+  });
+  return result.rows.length > 0;
+}

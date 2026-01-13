@@ -167,6 +167,7 @@ export const questionScopeTypes = z.enum(["website", "page", "section"]);
 export const createQuestionSchema = z
   .object({
     projectId: z.string().min(1, "Project ID is required"),
+    groupId: z.string().optional().nullable(),
     scopeType: questionScopeTypes,
     scopeId: z.string().optional().nullable(),
     fieldType: questionFieldTypes,
@@ -207,6 +208,53 @@ export const updateQuestionSchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
 });
 
+// Group scope types
+export const groupScopeTypes = z.enum(["website", "page", "section"]);
+
+// Question group schemas
+export const createQuestionGroupSchema = z
+  .object({
+    projectId: z.string().min(1, "Project ID is required"),
+    name: z.string().min(1, "Name is required").max(200),
+    description: z.string().max(500).optional(),
+    scopeType: groupScopeTypes,
+    scopeId: z.string().optional().nullable(),
+  })
+  .refine(
+    (data) => {
+      if (data.scopeType === "page" || data.scopeType === "section") {
+        return !!data.scopeId;
+      }
+      return true;
+    },
+    { message: "scopeId is required for page and section scopes", path: ["scopeId"] }
+  );
+
+export const updateQuestionGroupSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().max(500).nullable().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+// Batch add questions to group schema
+export const batchAddToGroupSchema = z.object({
+  questionIds: z.array(z.string().min(1)).min(1, "At least one question ID is required"),
+  groupId: z.string().min(1, "Group ID is required"),
+});
+
+// Reorder questions schema (also handles group and scope changes via drag-drop)
+export const reorderQuestionsSchema = z.object({
+  questionOrders: z.array(
+    z.object({
+      id: z.string().min(1),
+      sortOrder: z.number().int().min(0),
+      groupId: z.string().nullable().optional(),
+      scopeType: questionScopeTypes.optional(),
+      scopeId: z.string().nullable().optional(),
+    })
+  ).min(1),
+});
+
 // Submit questionnaire response schema
 export const submitQuestionnaireSchema = z.object({
   responses: z.array(
@@ -236,4 +284,8 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 export type CreateQuestionInput = z.infer<typeof createQuestionSchema>;
 export type UpdateQuestionInput = z.infer<typeof updateQuestionSchema>;
+export type CreateQuestionGroupInput = z.infer<typeof createQuestionGroupSchema>;
+export type UpdateQuestionGroupInput = z.infer<typeof updateQuestionGroupSchema>;
+export type BatchAddToGroupInput = z.infer<typeof batchAddToGroupSchema>;
+export type ReorderQuestionsInput = z.infer<typeof reorderQuestionsSchema>;
 export type SubmitQuestionnaireInput = z.infer<typeof submitQuestionnaireSchema>;

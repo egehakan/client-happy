@@ -207,6 +207,41 @@ export async function initializeSchema(): Promise<void> {
     // Index might already exist
   }
 
+  // Migration: Create question_groups table
+  try {
+    await db.execute("SELECT id FROM question_groups LIMIT 1");
+  } catch {
+    await db.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS question_groups (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        description TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_question_groups_project_id ON question_groups(project_id);
+    `);
+  }
+
+  // Migration: Add group_id column to questions table
+  try {
+    await db.execute("SELECT group_id FROM questions LIMIT 1");
+  } catch {
+    await db.execute("ALTER TABLE questions ADD COLUMN group_id TEXT REFERENCES question_groups(id) ON DELETE SET NULL");
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_questions_group_id ON questions(group_id)");
+  }
+
+  // Migration: Add scope_type and scope_id columns to question_groups table
+  try {
+    await db.execute("SELECT scope_type FROM question_groups LIMIT 1");
+  } catch {
+    await db.execute("ALTER TABLE question_groups ADD COLUMN scope_type TEXT CHECK (scope_type IN ('website', 'page', 'section'))");
+    await db.execute("ALTER TABLE question_groups ADD COLUMN scope_id TEXT");
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_question_groups_scope ON question_groups(scope_type, scope_id)");
+  }
+
   // Migration: Make section_id nullable in screenshots table
   // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
   try {

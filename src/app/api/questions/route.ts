@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { db, initializeSchema } from "@/lib/db";
 import { createQuestionSchema } from "@/lib/validators";
 import { type QuestionRow, questionFromRow } from "@/types";
-import { requireAuth, userOwnsProject, userOwnsPage, userOwnsSection } from "@/lib/auth/api-auth";
+import { requireAuth, userOwnsProject, userOwnsPage, userOwnsSection, userOwnsQuestionGroup } from "@/lib/auth/api-auth";
 
 export async function GET(request: Request) {
   const { session, error } = await requireAuth();
@@ -50,12 +50,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const { projectId, scopeType, scopeId, fieldType, label, description, placeholder, options, isRequired, maxFileCount } = result.data;
+    const { projectId, groupId, scopeType, scopeId, fieldType, label, description, placeholder, options, isRequired, maxFileCount } = result.data;
     const id = nanoid();
 
     // Verify ownership
     if (!(await userOwnsProject(session.user.id, projectId))) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    // Verify group ownership if applicable
+    if (groupId) {
+      if (!(await userOwnsQuestionGroup(session.user.id, groupId))) {
+        return NextResponse.json({ error: "Question group not found" }, { status: 404 });
+      }
     }
 
     // Verify scope ownership if applicable
@@ -80,11 +87,12 @@ export async function POST(request: Request) {
     const maxOrder = (maxOrderResult.rows[0] as unknown as { max_order: number }).max_order;
 
     await db.execute({
-      sql: `INSERT INTO questions (id, project_id, scope_type, scope_id, field_type, label, description, placeholder, options, is_required, max_file_count, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      sql: `INSERT INTO questions (id, project_id, group_id, scope_type, scope_id, field_type, label, description, placeholder, options, is_required, max_file_count, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         projectId,
+        groupId ?? null,
         scopeType,
         scopeId ?? null,
         fieldType,

@@ -6,6 +6,7 @@ import {
   type Project,
   type Question,
   type QuestionResponse,
+  type QuestionGroup,
   type Page,
   type Section,
 } from "@/types";
@@ -49,6 +50,7 @@ import {
   ArrowLeft,
   Upload,
   X,
+  Folder,
 } from "lucide-react";
 
 interface QuestionWithContext extends Question {
@@ -59,6 +61,7 @@ interface QuestionWithContext extends Question {
 interface QuestionnaireInterfaceProps {
   project: Project;
   questions: QuestionWithContext[];
+  questionGroups: QuestionGroup[];
   pages: Page[];
   sections: Section[];
   email: string;
@@ -82,6 +85,7 @@ interface ResponseState {
 export function QuestionnaireInterface({
   project,
   questions,
+  questionGroups,
   pages,
   sections,
   email,
@@ -101,6 +105,36 @@ export function QuestionnaireInterface({
   const websiteQuestions = questions.filter((q) => q.scopeType === "website");
   const pageQuestions = questions.filter((q) => q.scopeType === "page");
   const sectionQuestions = questions.filter((q) => q.scopeType === "section");
+
+  // Helper to get questions for a group (sorted by sortOrder)
+  function getQuestionsForGroup(groupId: string | null, scopeType?: string, scopeId?: string | null) {
+    return questions
+      .filter((q) => {
+        if (q.groupId !== groupId) return false;
+        if (scopeType !== undefined && q.scopeType !== scopeType) return false;
+        if (scopeId !== undefined && q.scopeId !== scopeId) return false;
+        return true;
+      })
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // Helper to get groups for a scope (sorted by sortOrder)
+  function getGroupsForScope(scopeType: string, scopeId: string | null) {
+    return questionGroups
+      .filter(g =>
+        g.scopeType === scopeType &&
+        (scopeId === null ? g.scopeId === null : g.scopeId === scopeId)
+      )
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // Sort pages and sections by sortOrder
+  const sortedPages = [...pages].sort((a, b) => a.sortOrder - b.sortOrder);
+  const getSortedSections = (pageId: string) =>
+    sections.filter(s => s.pageId === pageId).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Check if we're using scoped groups (new style) vs flat groups
+  const hasNewScopedGroups = questionGroups.some(g => g.scopeType !== null);
 
   // Get page name helper
   function getPageName(pageId: string): string {
@@ -530,8 +564,8 @@ export function QuestionnaireInterface({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors ${isDragOver
-                    ? "border-primary bg-primary/5"
-                    : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                  ? "border-primary bg-primary/5"
+                  : "border-muted-foreground/25 hover:border-muted-foreground/50"
                   }`}
               >
                 <Input
@@ -706,102 +740,258 @@ export function QuestionnaireInterface({
       {/* Main Content */}
       <main className="mx-auto max-w-4xl px-4 py-4 sm:px-6 sm:py-8">
         <div className="space-y-4">
-          {/* Website Questions */}
-          {websiteQuestions.length > 0 && (
-            <Card>
-              <Collapsible
-                open={openSections.has("website")}
-                onOpenChange={() => toggleSection("website")}
-              >
-                <CollapsibleTrigger className="w-full">
-                  <CardHeader className="flex flex-row items-center gap-3 hover:bg-muted/50">
-                    {openSections.has("website") ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                    <Globe className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">General Questions</CardTitle>
-                    <Badge variant="secondary" className="ml-auto">
-                      {websiteQuestions.length}
-                    </Badge>
-                  </CardHeader>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent className="space-y-4 pt-0">
-                    {websiteQuestions.map(renderQuestion)}
-                  </CardContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
-          )}
-
-          {/* Page and Section Questions grouped by page */}
-          {pages.map((page) => {
-            const pageQs = pageQuestions.filter((q) => q.scopeId === page.id);
-            const pageSections = sections.filter((s) => s.pageId === page.id);
-            const sectionQsForPage = pageSections.flatMap((section) =>
-              sectionQuestions
-                .filter((q) => q.scopeId === section.id)
-                .map((q) => ({ ...q, sectionName: section.name }))
-            );
-
-            if (pageQs.length === 0 && sectionQsForPage.length === 0) return null;
-
-            return (
-              <Card key={page.id}>
-                <Collapsible
-                  open={openSections.has(page.id)}
-                  onOpenChange={() => toggleSection(page.id)}
-                >
-                  <CollapsibleTrigger className="w-full">
-                    <CardHeader className="flex flex-row items-center gap-3 hover:bg-muted/50">
-                      {openSections.has(page.id) ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-base">{page.name}</CardTitle>
-                      <Badge variant="secondary" className="ml-auto">
-                        {pageQs.length + sectionQsForPage.length}
-                      </Badge>
-                    </CardHeader>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <CardContent className="space-y-6 pt-0">
-                      {/* Page-level questions */}
-                      {pageQs.length > 0 && (
-                        <div className="space-y-4">
-                          {pageQs.map(renderQuestion)}
-                        </div>
-                      )}
-
-                      {/* Section-level questions */}
-                      {pageSections.map((section) => {
-                        const sectionQs = sectionQuestions.filter(
-                          (q) => q.scopeId === section.id
-                        );
-                        if (sectionQs.length === 0) return null;
-
-                        return (
-                          <div key={section.id} className="space-y-4">
-                            <div className="flex items-center gap-2 border-b pb-2">
-                              <Layout className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm font-medium text-muted-foreground">
-                                {section.name}
-                              </span>
+          {hasNewScopedGroups ? (
+            <>
+              {/* Scoped groups display - Website */}
+              {websiteQuestions.length > 0 && (
+                <Card>
+                  <Collapsible
+                    open={openSections.has("website")}
+                    onOpenChange={() => toggleSection("website")}
+                  >
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="flex flex-row items-center gap-3 hover:bg-muted/50">
+                        {openSections.has("website") ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        <Globe className="h-4 w-4 text-muted-foreground" />
+                        <CardTitle className="text-base">Website</CardTitle>
+                        <Badge variant="secondary" className="ml-auto">
+                          {websiteQuestions.length}
+                        </Badge>
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-6 pt-2">
+                        {/* Groups within website scope */}
+                        {getGroupsForScope("website", null).map((group) => {
+                          const groupQuestions = getQuestionsForGroup(group.id, "website", null);
+                          if (groupQuestions.length === 0) return null;
+                          return (
+                            <div key={group.id} className="space-y-3 p-3 rounded-lg border bg-muted/20">
+                              <div className="flex items-center gap-2">
+                                <Folder className="h-4 w-4 text-muted-foreground" />
+                                <span className="font-medium text-sm">{group.name}</span>
+                                {group.description && (
+                                  <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                )}
+                              </div>
+                              <div className="space-y-4">
+                                {groupQuestions.map(renderQuestion)}
+                              </div>
                             </div>
-                            {sectionQs.map(renderQuestion)}
-                          </div>
-                        );
-                      })}
-                    </CardContent>
-                  </CollapsibleContent>
-                </Collapsible>
-              </Card>
-            );
-          })}
+                          );
+                        })}
+                        {/* Ungrouped website questions */}
+                        {getQuestionsForGroup(null, "website", null).map(renderQuestion)}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </Card>
+              )}
+
+              {/* Page and Section scopes (sorted) */}
+              {sortedPages.map((page) => {
+                const pageQs = pageQuestions.filter((q) => q.scopeId === page.id);
+                const pageSections = getSortedSections(page.id);
+                const sectionQsForPage = pageSections.flatMap((section) =>
+                  sectionQuestions.filter((q) => q.scopeId === section.id)
+                );
+
+                if (pageQs.length === 0 && sectionQsForPage.length === 0) return null;
+
+                return (
+                  <Card key={page.id}>
+                    <Collapsible
+                      open={openSections.has(page.id)}
+                      onOpenChange={() => toggleSection(page.id)}
+                    >
+                      <CollapsibleTrigger className="w-full">
+                        <CardHeader className="flex flex-row items-center gap-3 hover:bg-muted/50">
+                          {openSections.has(page.id) ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <CardTitle className="text-base">{page.name}</CardTitle>
+                          <Badge variant="secondary" className="ml-auto">
+                            {pageQs.length + sectionQsForPage.length}
+                          </Badge>
+                        </CardHeader>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <CardContent className="space-y-6 pt-2">
+                          {/* Section-level questions first (sorted by sortOrder) */}
+                          {pageSections.map((section) => {
+                            const sectionQs = sectionQuestions.filter((q) => q.scopeId === section.id);
+                            if (sectionQs.length === 0) return null;
+
+                            return (
+                              <div key={section.id} className="space-y-4">
+                                <div className="flex items-center gap-2 border-b pb-2">
+                                  <Layout className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-sm font-medium text-muted-foreground">
+                                    {section.name}
+                                  </span>
+                                </div>
+                                {/* Groups within section scope */}
+                                {getGroupsForScope("section", section.id).map((group) => {
+                                  const groupQuestions = getQuestionsForGroup(group.id, "section", section.id);
+                                  if (groupQuestions.length === 0) return null;
+                                  return (
+                                    <div key={group.id} className="space-y-3 p-3 rounded-lg border bg-muted/20">
+                                      <div className="flex items-center gap-2">
+                                        <Folder className="h-4 w-4 text-muted-foreground" />
+                                        <span className="font-medium text-sm">{group.name}</span>
+                                        {group.description && (
+                                          <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                        )}
+                                      </div>
+                                      <div className="space-y-4">
+                                        {groupQuestions.map(renderQuestion)}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {/* Ungrouped section questions */}
+                                {getQuestionsForGroup(null, "section", section.id).map(renderQuestion)}
+                              </div>
+                            );
+                          })}
+
+                          {/* Page-level groups (after sections) */}
+                          {getGroupsForScope("page", page.id).map((group) => {
+                            const groupQuestions = getQuestionsForGroup(group.id, "page", page.id);
+                            if (groupQuestions.length === 0) return null;
+                            return (
+                              <div key={group.id} className="space-y-3 p-3 rounded-lg border bg-muted/20">
+                                <div className="flex items-center gap-2">
+                                  <Folder className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-medium text-sm">{group.name}</span>
+                                  {group.description && (
+                                    <span className="text-xs text-muted-foreground">- {group.description}</span>
+                                  )}
+                                </div>
+                                <div className="space-y-4">
+                                  {groupQuestions.map(renderQuestion)}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {/* Ungrouped page questions (after sections and groups) */}
+                          {getQuestionsForGroup(null, "page", page.id).map(renderQuestion)}
+                        </CardContent>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </Card>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              {/* Legacy scope-based display */}
+              {/* Website Questions */}
+              {websiteQuestions.length > 0 && (
+                <Card>
+                  <Collapsible
+                    open={openSections.has("website")}
+                    onOpenChange={() => toggleSection("website")}
+                  >
+                    <CollapsibleTrigger className="w-full">
+                      <CardHeader className="flex flex-row items-center gap-3 hover:bg-muted/50">
+                        {openSections.has("website") ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        <Globe className="h-4 w-4 text-muted-foreground" />
+                        <CardTitle className="text-base">General Questions</CardTitle>
+                        <Badge variant="secondary" className="ml-auto">
+                          {websiteQuestions.length}
+                        </Badge>
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-4 pt-2">
+                        {websiteQuestions.map(renderQuestion)}
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </Card>
+              )}
+
+              {/* Page and Section Questions grouped by page (sorted) */}
+              {sortedPages.map((page) => {
+                const pageQs = pageQuestions.filter((q) => q.scopeId === page.id);
+                const pageSections = getSortedSections(page.id);
+                const sectionQsForPage = pageSections.flatMap((section) =>
+                  sectionQuestions
+                    .filter((q) => q.scopeId === section.id)
+                    .map((q) => ({ ...q, sectionName: section.name }))
+                );
+
+                if (pageQs.length === 0 && sectionQsForPage.length === 0) return null;
+
+                return (
+                  <Card key={page.id}>
+                    <Collapsible
+                      open={openSections.has(page.id)}
+                      onOpenChange={() => toggleSection(page.id)}
+                    >
+                      <CollapsibleTrigger className="w-full">
+                        <CardHeader className="flex flex-row items-center gap-3 hover:bg-muted/50">
+                          {openSections.has(page.id) ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <CardTitle className="text-base">{page.name}</CardTitle>
+                          <Badge variant="secondary" className="ml-auto">
+                            {pageQs.length + sectionQsForPage.length}
+                          </Badge>
+                        </CardHeader>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <CardContent className="space-y-6 pt-2">
+                          {/* Page-level questions */}
+                          {pageQs.length > 0 && (
+                            <div className="space-y-4">
+                              {pageQs.map(renderQuestion)}
+                            </div>
+                          )}
+
+                          {/* Section-level questions */}
+                          {pageSections.map((section) => {
+                            const sectionQs = sectionQuestions.filter(
+                              (q) => q.scopeId === section.id
+                            );
+                            if (sectionQs.length === 0) return null;
+
+                            return (
+                              <div key={section.id} className="space-y-4">
+                                <div className="flex items-center gap-2 border-b pb-2">
+                                  <Layout className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-sm font-medium text-muted-foreground">
+                                    {section.name}
+                                  </span>
+                                </div>
+                                {sectionQs.map(renderQuestion)}
+                              </div>
+                            );
+                          })}
+                        </CardContent>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </Card>
+                );
+              })}
+            </>
+          )}
 
           {/* Submit Button */}
           <div className="flex justify-end pt-4">

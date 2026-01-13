@@ -224,6 +224,47 @@ export function voteFromRow(row: VoteRow): Vote {
   };
 }
 
+// Question Group types
+export type GroupScopeType = "website" | "page" | "section";
+
+export interface QuestionGroup {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string | null;
+  scopeType: GroupScopeType | null;
+  scopeId: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuestionGroupRow {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  scope_type: GroupScopeType | null;
+  scope_id: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export function questionGroupFromRow(row: QuestionGroupRow): QuestionGroup {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    name: row.name,
+    description: row.description,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 // Question types
 export type QuestionFieldType =
   | "text"
@@ -240,6 +281,7 @@ export type QuestionScopeType = "website" | "page" | "section";
 export interface Question {
   id: string;
   projectId: string;
+  groupId: string | null;
   scopeType: QuestionScopeType;
   scopeId: string | null;
   fieldType: QuestionFieldType;
@@ -268,6 +310,7 @@ export interface QuestionResponse {
 export interface QuestionRow {
   id: string;
   project_id: string;
+  group_id: string | null;
   scope_type: QuestionScopeType;
   scope_id: string | null;
   field_type: QuestionFieldType;
@@ -297,6 +340,7 @@ export function questionFromRow(row: QuestionRow): Question {
   return {
     id: row.id,
     projectId: row.project_id,
+    groupId: row.group_id,
     scopeType: row.scope_type,
     scopeId: row.scope_id,
     fieldType: row.field_type,
@@ -328,4 +372,8 @@ export function questionResponseFromRow(row: QuestionResponseRow): QuestionRespo
 export interface QuestionWithScope extends Question {
   scopeName?: string;
   pageName?: string;
+}
+
+export interface QuestionGroupWithQuestions extends QuestionGroup {
+  questions: Question[];
 }

@@ -7,11 +7,13 @@ import {
   type SectionRow,
   type ScreenshotRow,
   type QuestionRow,
+  type QuestionGroupRow,
   projectFromRow,
   pageFromRow,
   sectionFromRow,
   screenshotFromRow,
   questionFromRow,
+  questionGroupFromRow,
 } from "@/types";
 import { VotingInterface } from "@/components/client/voting-interface";
 
@@ -79,11 +81,20 @@ async function getProjectBySlug(slug: string) {
 
   // Fetch questions
   const questionsResult = await db.execute({
-    sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY scope_type, sort_order, created_at",
+    sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY sort_order, created_at",
     args: [project.id],
   });
   const questions = questionsResult.rows.map((r) =>
     questionFromRow(r as unknown as QuestionRow)
+  );
+
+  // Fetch question groups
+  const questionGroupsResult = await db.execute({
+    sql: "SELECT * FROM question_groups WHERE project_id = ? ORDER BY sort_order, created_at",
+    args: [project.id],
+  });
+  const questionGroups = questionGroupsResult.rows.map((r) =>
+    questionGroupFromRow(r as unknown as QuestionGroupRow)
   );
 
   // Flatten sections for questionnaire
@@ -99,7 +110,7 @@ async function getProjectBySlug(slug: string) {
     }))
   );
 
-  return { project, pages: pagesWithSections, questions, sections: allSections };
+  return { project, pages: pagesWithSections, questions, questionGroups, sections: allSections };
 }
 
 export default async function ClientVotingPage({ params }: PageProps) {
@@ -108,7 +119,7 @@ export default async function ClientVotingPage({ params }: PageProps) {
 
   if (!data) notFound();
 
-  const { project, pages, questions, sections } = data;
+  const { project, pages, questions, questionGroups, sections } = data;
 
   // Flatten all screenshots for voting (both section and page-level screenshots)
   const allScreenshots = pages.flatMap((page) => {
@@ -162,6 +173,7 @@ export default async function ClientVotingPage({ params }: PageProps) {
       pages={pages}
       screenshots={allScreenshots}
       questions={questions}
+      questionGroups={questionGroups}
       flatPages={flatPages}
       sections={sections}
     />

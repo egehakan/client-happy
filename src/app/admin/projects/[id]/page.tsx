@@ -8,11 +8,13 @@ import {
   type SectionRow,
   type ScreenshotRow,
   type QuestionRow,
+  type QuestionGroupRow,
   projectFromRow,
   pageFromRow,
   sectionFromRow,
   screenshotFromRow,
   questionFromRow,
+  questionGroupFromRow,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -87,14 +89,23 @@ async function getProjectData(id: string) {
 
   // Fetch questions
   const questionsResult = await db.execute({
-    sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY scope_type, sort_order, created_at",
+    sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY sort_order, created_at",
     args: [id],
   });
   const questions = questionsResult.rows.map((r) =>
     questionFromRow(r as unknown as QuestionRow)
   );
 
-  return { project, pages: pagesWithSections, questions };
+  // Fetch question groups
+  const questionGroupsResult = await db.execute({
+    sql: "SELECT * FROM question_groups WHERE project_id = ? ORDER BY sort_order, created_at",
+    args: [id],
+  });
+  const questionGroups = questionGroupsResult.rows.map((r) =>
+    questionGroupFromRow(r as unknown as QuestionGroupRow)
+  );
+
+  return { project, pages: pagesWithSections, questions, questionGroups };
 }
 
 export default async function ProjectDetailPage({ params }: PageProps) {
@@ -103,7 +114,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
   if (!data) notFound();
 
-  const { project, pages, questions } = data;
+  const { project, pages, questions, questionGroups } = data;
 
   return (
     <div>
@@ -155,7 +166,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         </TabsContent>
 
         <TabsContent value="questionnaire">
-          <QuestionnaireManager projectId={project.id} pages={pages} questions={questions} />
+          <QuestionnaireManager projectId={project.id} pages={pages} questions={questions} questionGroups={questionGroups} />
         </TabsContent>
       </Tabs>
     </div>
