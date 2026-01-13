@@ -82,6 +82,27 @@ export const updateScreenshotSchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
 });
 
+// Bulk screenshot upload validator
+export const bulkCreateScreenshotsSchema = z.object({
+  projectId: z.string().min(1, "Project ID is required"),
+  sectionId: z.string().min(1).optional().nullable(),
+  pageId: z.string().min(1).optional().nullable(),
+  screenshots: z.array(
+    z.object({
+      title: z.string().max(100).optional(),
+      description: z.string().max(500).optional(),
+    })
+  ).min(1, "At least one screenshot is required").max(10, "Maximum 10 screenshots per upload"),
+}).refine(
+  (data) => {
+    // Must have either sectionId or pageId (but not both)
+    return (!!data.sectionId && !data.pageId) || (!data.sectionId && !!data.pageId);
+  },
+  {
+    message: "Either sectionId or pageId must be provided (but not both)",
+  }
+);
+
 // Vote validators
 export const createVoteSchema = z.object({
   screenshotId: z.string().min(1, "Screenshot ID is required"),
@@ -207,6 +228,7 @@ export type CreateSectionInput = z.infer<typeof createSectionSchema>;
 export type UpdateSectionInput = z.infer<typeof updateSectionSchema>;
 export type CreateScreenshotInput = z.infer<typeof createScreenshotSchema>;
 export type UpdateScreenshotInput = z.infer<typeof updateScreenshotSchema>;
+export type BulkCreateScreenshotsInput = z.infer<typeof bulkCreateScreenshotsSchema>;
 export type CreateVoteInput = z.infer<typeof createVoteSchema>;
 export type SubmitVotesInput = z.infer<typeof submitVotesSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;

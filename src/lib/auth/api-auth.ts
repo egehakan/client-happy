@@ -46,9 +46,10 @@ export async function userOwnsSection(userId: string, sectionId: string): Promis
   return result.rows.length > 0;
 }
 
-// Check if user owns a screenshot (through project)
+// Check if user owns a screenshot (through project - via section or direct page attachment)
 export async function userOwnsScreenshot(userId: string, screenshotId: string): Promise<boolean> {
-  const result = await db.execute({
+  // Check for screenshots attached to sections
+  const sectionResult = await db.execute({
     sql: `SELECT sc.id FROM screenshots sc
           JOIN sections s ON sc.section_id = s.id
           JOIN pages p ON s.page_id = p.id
@@ -56,7 +57,17 @@ export async function userOwnsScreenshot(userId: string, screenshotId: string): 
           WHERE sc.id = ? AND pr.user_id = ?`,
     args: [screenshotId, userId],
   });
-  return result.rows.length > 0;
+  if (sectionResult.rows.length > 0) return true;
+
+  // Check for screenshots attached directly to pages
+  const pageResult = await db.execute({
+    sql: `SELECT sc.id FROM screenshots sc
+          JOIN pages p ON sc.page_id = p.id
+          JOIN projects pr ON p.project_id = pr.id
+          WHERE sc.id = ? AND sc.section_id IS NULL AND pr.user_id = ?`,
+    args: [screenshotId, userId],
+  });
+  return pageResult.rows.length > 0;
 }
 
 // Check if user owns a question (through project)

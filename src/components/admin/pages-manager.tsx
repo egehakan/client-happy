@@ -80,6 +80,14 @@ export function PagesManager({ projectId, pages }: PagesManagerProps) {
     name: string;
   } | null>(null);
 
+  // Edit state
+  const [editItem, setEditItem] = useState<{
+    type: "page" | "section";
+    id: string;
+    name: string;
+  } | null>(null);
+  const [editName, setEditName] = useState("");
+
   function togglePage(pageId: string) {
     const newOpen = new Set(openPages);
     if (newOpen.has(pageId)) {
@@ -168,6 +176,42 @@ export function PagesManager({ projectId, pages }: PagesManagerProps) {
     }
   }
 
+  function openEditModal(type: "page" | "section", id: string, name: string) {
+    setEditItem({ type, id, name });
+    setEditName(name);
+  }
+
+  async function handleEdit() {
+    if (!editItem || !editName.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const endpoint =
+        editItem.type === "page"
+          ? `/api/pages/${editItem.id}`
+          : `/api/sections/${editItem.id}`;
+
+      const response = await fetch(endpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName }),
+      });
+
+      if (!response.ok) throw new Error("Failed to update");
+
+      toast.success(`${editItem.type === "page" ? "Page" : "Section"} updated`);
+      setEditItem(null);
+      router.refresh();
+    } catch {
+      toast.error("Failed to update");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <>
       <Card>
@@ -246,20 +290,30 @@ export function PagesManager({ projectId, pages }: PagesManagerProps) {
                           {page.sections.length} sections
                         </Badge>
                       </CollapsibleTrigger>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => {
-                          setDeleteItem({
-                            type: "page",
-                            id: page.id,
-                            name: page.name,
-                          });
-                        }}
-                      >
-                        <Trash className="h-4 w-4 text-muted-foreground" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => openEditModal("page", page.id, page.name)}
+                        >
+                          <Pencil className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => {
+                            setDeleteItem({
+                              type: "page",
+                              id: page.id,
+                              name: page.name,
+                            });
+                          }}
+                        >
+                          <Trash className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </div>
                     </div>
                     <CollapsibleContent>
                       <div className="border-t px-4 py-3">
@@ -276,20 +330,32 @@ export function PagesManager({ projectId, pages }: PagesManagerProps) {
                                   {section.screenshots.length}
                                 </Badge>
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() =>
-                                  setDeleteItem({
-                                    type: "section",
-                                    id: section.id,
-                                    name: section.name,
-                                  })
-                                }
-                              >
-                                <Trash className="h-3 w-3 text-muted-foreground" />
-                              </Button>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() =>
+                                    openEditModal("section", section.id, section.name)
+                                  }
+                                >
+                                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() =>
+                                    setDeleteItem({
+                                      type: "section",
+                                      id: section.id,
+                                      name: section.name,
+                                    })
+                                  }
+                                >
+                                  <Trash className="h-3 w-3 text-muted-foreground" />
+                                </Button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -368,6 +434,44 @@ export function PagesManager({ projectId, pages }: PagesManagerProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit Dialog */}
+      <Dialog
+        open={editItem !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditItem(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Edit {editItem?.type === "page" ? "Page" : "Section"}
+            </DialogTitle>
+            <DialogDescription>
+              Update the name for this {editItem?.type}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div className="space-y-2">
+              <Label htmlFor="editName">Name</Label>
+              <Input
+                id="editName"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder={`${editItem?.type === "page" ? "Page" : "Section"} name`}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditItem(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleEdit} disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

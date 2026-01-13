@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { type Project, type Page, type Section, type Screenshot, type Question } from "@/types";
@@ -187,6 +187,16 @@ export function VotingInterface({
   const votedCount = Object.values(votes).filter((v) => v.vote !== null).length;
   const progress = screenshots.length > 0 ? (votedCount / screenshots.length) * 100 : 0;
   const hasAnyVotes = votedCount > 0;
+
+  // Get indices of images to preload (current + next 2)
+  const preloadIndices = useMemo(() => {
+    const indices = new Set<number>();
+    indices.add(currentIndex);
+    if (currentIndex + 1 < screenshots.length) indices.add(currentIndex + 1);
+    if (currentIndex + 2 < screenshots.length) indices.add(currentIndex + 2);
+    if (currentIndex - 1 >= 0) indices.add(currentIndex - 1);
+    return indices;
+  }, [currentIndex, screenshots.length]);
 
   async function handleEmailSubmit(email: string) {
     setVoterEmail(email);
@@ -472,6 +482,8 @@ export function VotingInterface({
                   src={currentScreenshot.filePath}
                   alt={currentScreenshot.title || "Screenshot"}
                   fill
+                  priority
+                  sizes="(max-width: 768px) 100vw, 896px"
                   className={cn(
                     "object-contain transition-[filter] duration-500",
                     showContextOverlay && "blur-sm"
@@ -482,6 +494,7 @@ export function VotingInterface({
                 <img
                   src={currentScreenshot.externalUrl}
                   alt={currentScreenshot.title || "Screenshot"}
+                  loading="eager"
                   className={cn(
                     "h-full w-full object-contain transition-[filter] duration-500",
                     showContextOverlay && "blur-sm"
@@ -494,6 +507,24 @@ export function VotingInterface({
                   </span>
                 </div>
               )}
+
+              {/* Preload next images invisibly */}
+              {screenshots.map((screenshot, index) => {
+                if (index === currentIndex || !preloadIndices.has(index)) return null;
+                const src = screenshot.sourceType === "local" ? screenshot.filePath : screenshot.externalUrl;
+                if (!src) return null;
+                return (
+                  <Image
+                    key={screenshot.id}
+                    src={src}
+                    alt=""
+                    fill
+                    sizes="(max-width: 768px) 100vw, 896px"
+                    className="invisible absolute"
+                    aria-hidden="true"
+                  />
+                );
+              })}
 
               {/* Context Overlay */}
               {showContextOverlay && contextInfo && (
@@ -628,6 +659,7 @@ export function VotingInterface({
                         alt=""
                         width={96}
                         height={64}
+                        loading="lazy"
                         className="h-full w-full object-cover"
                       />
                     ) : screenshot.externalUrl ? (
@@ -635,6 +667,7 @@ export function VotingInterface({
                       <img
                         src={screenshot.externalUrl}
                         alt=""
+                        loading="lazy"
                         className="h-full w-full object-cover"
                       />
                     ) : null}

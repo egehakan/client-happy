@@ -1,0 +1,822 @@
+================================================================================
+                           ClientHappy APPLICATION
+                         Comprehensive Documentation
+================================================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Overview
+2. Purpose and Use Case
+3. Core Concepts
+4. Entity Structure and Relationships
+5. Admin Features
+6. Client Features
+7. Voting System
+8. Questionnaire System
+9. File Upload System
+10. Authentication System
+11. Technical Architecture
+12. Workflow Examples
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+ClientHappy is a web application designed to help agencies, freelancers, and
+development teams gather structured feedback from clients on their projects.
+It enables clients to vote on screenshots and answer questionnaires about their
+preferences and project requirements.
+
+Key Highlights:
+- Built with Next.js (App Router), React, TypeScript, and Tailwind CSS
+- Uses Turso (SQLite) for database storage
+- Uses Vercel Blob for file storage
+- Runs locally on Mac machines
+- No client authentication required - clients access via shareable links
+
+================================================================================
+2. PURPOSE AND USE CASE
+================================================================================
+
+PROBLEM IT SOLVES:
+When working with clients on web and app projects, gathering feedback can be
+challenging. Clients often struggle to articulate their preferences, and
+feedback collection is typically unstructured (emails, calls, scattered notes).
+
+SOLUTION:
+This application provides a structured, visual way to collect client feedback:
+
+1. VISUAL VOTING: Clients see screenshots and vote Yes/Maybe/No with
+   optional comments, making it easy to understand their preferences at a glance.
+
+2. STRUCTURED QUESTIONNAIRES: Custom questions can be created to gather specific
+   information about client requirements, preferences, colors, styles, etc.
+
+3. ORGANIZED DATA: All feedback is stored in a database, organized by project,
+   page, and section, making it easy to analyze and reference.
+
+TYPICAL WORKFLOW:
+1. Create a project for a client
+2. Upload screenshots organized by pages and sections
+3. Create questionnaire questions (optional)
+4. Share a link with the client
+5. Client enters their email and votes on screenshots / answers questions
+6. Review the feedback in the admin panel
+
+================================================================================
+3. CORE CONCEPTS
+================================================================================
+
+PROJECT:
+A project represents a client engagement. It can be either "web" or "mobile"
+type. Each project has a unique URL slug for client access.
+
+Example: "Acme Corp Website Redesign" -> /projects/acme-corp-website-redesign
+
+PAGES:
+Pages are the first level of organization within a project. They typically
+represent different pages or screens in the app or website.
+
+Examples: "Homepage", "About Us", "Contact Page", "Dashboard"
+
+SECTIONS:
+Sections subdivide pages into logical parts. They help organize screenshots
+when a single page has multiple areas to review.
+
+Examples: "Hero Section", "Navigation", "Footer", "Sidebar"
+
+SCREENSHOTS:
+Screenshots are the images that clients will vote on. They can be:
+- Uploaded locally (stored in Vercel Blob)
+- Linked from external URLs
+
+Screenshots can be attached to:
+- A specific section (most common)
+- A page directly (for page-level screenshots without a section)
+
+QUESTIONS:
+Questions are form fields that gather additional information from clients. They
+can be scoped to:
+- The entire website/project (general questions)
+- A specific page (page-related questions)
+- A specific section (section-specific questions)
+
+VOTES:
+Votes are client responses to screenshots. Each vote includes:
+- The vote choice: Yes, Maybe (Mid), or No
+- An optional comment explaining the choice
+- The client's email identifier
+
+RESPONSES:
+Responses are client answers to questionnaire questions. They support various
+field types including text, files, colors, dates, and more.
+
+================================================================================
+4. ENTITY STRUCTURE AND RELATIONSHIPS
+================================================================================
+
+HIERARCHY:
+
+Project
+├── Pages (1 to many)
+│   ├── Sections (0 to many)
+│   │   └── Screenshots (0 to many)
+│   └── Screenshots (page-level, 0 to many)
+├── Questions (0 to many, scoped to project/page/section)
+└── [Clients submit Votes and Responses]
+
+DATABASE TABLES:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ USERS                                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, email, password_hash, email_verified, verification_token,               │
+│ verification_token_expires, created_at, updated_at                          │
+│                                                                             │
+│ Purpose: Store admin users who manage projects                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PROJECTS                                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, name, slug (unique), type (web/mobile), description, user_id,           │
+│ created_at, updated_at                                                      │
+│                                                                             │
+│ Purpose: Container for all project data, owned by a user                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PAGES                                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, project_id, name, description, sort_order, created_at, updated_at       │
+│                                                                             │
+│ Purpose: Organize content into pages within a project                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SECTIONS                                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, page_id, name, description, sort_order, created_at, updated_at          │
+│                                                                             │
+│ Purpose: Subdivide pages into logical sections                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SCREENSHOTS                                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, section_id (nullable), page_id (nullable), title, description,          │
+│ source_type (local/url), file_path, external_url, sort_order,               │
+│ created_at, updated_at                                                      │
+│                                                                             │
+│ Purpose: Store images for voting                                            │
+│ Note: Must have either section_id OR page_id, not both                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ VOTES                                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, screenshot_id, vote (yes/mid/no), comment, voter_identifier,            │
+│ created_at                                                                  │
+│                                                                             │
+│ Purpose: Store client votes on screenshots                                  │
+│ Note: voter_identifier is the client's email                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ QUESTIONS                                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, project_id, scope_type (website/page/section), scope_id,                │
+│ field_type (text/textarea/select/checkbox/file/date/color/url),             │
+│ label, description, placeholder, options (JSON), is_required,               │
+│ max_file_count, sort_order, created_at, updated_at                          │
+│                                                                             │
+│ Purpose: Define questionnaire questions with various field types            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ QUESTION_RESPONSES                                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ id, question_id, respondent_email, value, file_path, created_at,            │
+│ updated_at                                                                  │
+│                                                                             │
+│ Purpose: Store client answers to questions                                  │
+│ Note: Unique constraint on (question_id, respondent_email)                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+5. ADMIN FEATURES
+================================================================================
+
+ACCESSING ADMIN:
+Navigate to /admin and log in with your credentials. Admin accounts can be
+created via environment variables or self-registration with email verification.
+
+ADMIN DASHBOARD (/admin):
+- Overview cards showing total projects, screenshots, and votes
+- Quick navigation to projects and analytics
+
+PROJECT LIST (/admin/projects):
+- View all your projects sorted by creation date
+- Create new projects with name, type, and description
+- Each project card shows project details and links to manage
+
+PROJECT MANAGEMENT (/admin/projects/[id]):
+The project detail page has multiple tabs:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ DETAILS TAB                                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ - Edit project name, slug, type, and description                            │
+│ - Copy shareable client link to clipboard                                   │
+│ - Delete project (cascades to all related data)                             │
+│ - View project statistics                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PAGES & SECTIONS TAB                                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ - Create new pages with name and description                                │
+│ - Edit existing pages                                                       │
+│ - Delete pages (cascades to sections and screenshots)                       │
+│ - Create sections within pages                                              │
+│ - Edit and delete sections                                                  │
+│ - Reorder pages and sections using sort order                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ SCREENSHOTS TAB                                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ - Upload local images (drag & drop or file picker)                          │
+│ - Add external image URLs                                                   │
+│ - Choose target: page-level or specific section                             │
+│ - Add title and description for each screenshot                             │
+│ - View screenshots organized by page and section                            │
+│ - Delete screenshots                                                        │
+│                                                                             │
+│ Supported formats: JPEG, PNG, WebP, GIF, SVG                                │
+│ Maximum file size: 10MB                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ QUESTIONNAIRE TAB                                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ - Create questions with various field types                                 │
+│ - Set question scope (website, page, or section)                            │
+│ - Mark questions as required or optional                                    │
+│ - Add descriptions and placeholder text                                     │
+│ - For select/checkbox: define available options                             │
+│ - For file uploads: set maximum file count (1-20)                           │
+│ - Delete questions                                                          │
+│                                                                             │
+│ Available field types:                                                      │
+│ - Text Input: Short text answers                                            │
+│ - Text Area: Long-form text answers                                         │
+│ - Dropdown Select: Single choice from options                               │
+│ - Checkboxes: Multiple choices from options                                 │
+│ - File Upload: Upload files (images, PDFs, documents)                       │
+│ - Date Picker: Select a date                                                │
+│ - Color Picker: Choose a color                                              │
+│ - URL Input: Enter a web address                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+RESPONSES (/admin/responses):
+- Summary showing total votes and questionnaire submissions
+- List of projects with response counts
+- Click to view detailed responses for each project
+
+PROJECT RESPONSES (/admin/responses/[projectId]):
+- View all votes grouped by screenshot
+- See vote distribution (yes/mid/no counts)
+- Read client comments
+- View questionnaire responses by respondent
+- Filter responses by client email
+- Reset votes (delete all votes for project)
+- Reset questionnaire responses (delete all answers and uploaded files)
+
+ACCOUNT SETTINGS (/admin/account):
+- Change password
+- Delete account
+- View email verification status
+
+================================================================================
+6. CLIENT FEATURES
+================================================================================
+
+CLIENT ACCESS:
+Clients access the application via a shareable link:
+/projects/[project-slug]
+
+No account or login is required for clients. They only need to provide an
+email address to track their responses.
+
+CLIENT FLOW:
+
+Step 1: EMAIL ENTRY
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ The client enters their email address. This email is used to:               │
+│ - Identify their votes and questionnaire responses                          │
+│ - Allow them to update their responses if they return later                 │
+│ - Track completion status                                                   │
+│                                                                             │
+│ The email is saved in browser localStorage for convenience.                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Step 2: SELECTION SCREEN (if both voting and questionnaire exist)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ If the project has both screenshots and questions, clients choose:          │
+│ - "Vote on Designs" - go to the voting interface                            │
+│ - "Complete Questionnaire" - go to the questionnaire                        │
+│                                                                             │
+│ The selection screen shows:                                                 │
+│ - Completion badges if they've already completed an activity                │
+│ - "New Items" badges if new content was added since they last visited       │
+│ - Disabled states if a feature is not available                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Step 3: VOTING OR QUESTIONNAIRE
+See detailed sections below for each workflow.
+
+Step 4: THANK YOU PAGE
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ After submitting votes or questionnaire responses, clients see a           │
+│ confirmation page thanking them for their feedback.                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+RETURNING CLIENTS:
+When a client returns to the same project:
+- Their email is remembered (from localStorage)
+- Previous votes are pre-loaded (they can update them)
+- Previous questionnaire responses are pre-filled
+- They can change any of their responses and resubmit
+
+================================================================================
+7. VOTING SYSTEM
+================================================================================
+
+PURPOSE:
+The voting system allows clients to provide quick, visual feedback on
+screenshots. It's designed to be simple and intuitive.
+
+VOTE OPTIONS:
+┌─────────────┬─────────────────────────────────────────────────────────────┐
+│ YES (👍)    │ The client likes this / approves this direction             │
+├─────────────┼─────────────────────────────────────────────────────────────┤
+│ MAYBE (➖)  │ The client is neutral / has mixed feelings                  │
+├─────────────┼─────────────────────────────────────────────────────────────┤
+│ NO (👎)     │ The client dislikes this / does not approve                 │
+└─────────────┴─────────────────────────────────────────────────────────────┘
+
+VOTING INTERFACE:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ HEADER                                                                      │
+│ - Project name and description                                              │
+│ - Back button (if coming from selection screen)                             │
+│ - Client email display                                                      │
+│ - Theme toggle (light/dark mode)                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ PROGRESS BAR                                                                │
+│ - Shows X of Y voted                                                        │
+│ - Percentage complete                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ SCREENSHOT DISPLAY                                                          │
+│ - Large image view of current screenshot                                    │
+│ - Title and description                                                     │
+│ - Page and section context (e.g., "Homepage / Hero Section")                │
+│ - Screenshot counter (e.g., "3 / 15")                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ CONTEXT OVERLAY (when changing pages/sections)                              │
+│ - When navigating to a new page or section, an overlay appears              │
+│ - Shows "Page: [Name]" and optionally "Section: [Name]"                     │
+│ - Image is blurred during the 2-second overlay display                      │
+│ - Helps clients understand the context switch                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ VOTING BUTTONS                                                              │
+│ - Three buttons: Yes (green), Maybe (yellow), No (red)                      │
+│ - Selected vote is highlighted                                              │
+│ - Click to select/change vote                                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ COMMENT BOX                                                                 │
+│ - Optional textarea for additional feedback                                 │
+│ - "Add a comment (optional)..."                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ NAVIGATION                                                                  │
+│ - Previous button (disabled on first screenshot)                            │
+│ - Next button / Submit button (on last screenshot)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ THUMBNAIL STRIP                                                             │
+│ - Scrollable row of all screenshot thumbnails                               │
+│ - Click to jump to any screenshot                                           │
+│ - Color-coded borders show vote status:                                     │
+│   - Green ring: Voted Yes                                                   │
+│   - Yellow ring: Voted Maybe                                                │
+│   - Red ring: Voted No                                                      │
+│   - No ring: Not voted yet                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+SUBMISSION:
+- Client must vote on at least one screenshot to submit
+- All votes are submitted together in bulk
+- If the client has voted before, their previous votes are replaced
+- Redirects to thank you page after successful submission
+
+================================================================================
+8. QUESTIONNAIRE SYSTEM
+================================================================================
+
+PURPOSE:
+The questionnaire system allows collecting structured information from clients
+beyond simple voting. It supports various question types for different kinds
+of data collection.
+
+QUESTION SCOPING:
+Questions can be scoped to different levels:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ WEBSITE SCOPE                                                               │
+│ - General questions about the entire project                                │
+│ - Displayed in "General Questions" section                                  │
+│ - Example: "What is your brand's primary color?"                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ PAGE SCOPE                                                                  │
+│ - Questions specific to a particular page                                   │
+│ - Displayed under the page name                                             │
+│ - Example: "What content should appear on the homepage?"                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ SECTION SCOPE                                                               │
+│ - Questions specific to a section within a page                             │
+│ - Displayed under the section name (nested under page)                      │
+│ - Example: "What call-to-action text do you prefer for the hero?"           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+FIELD TYPES:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ TEXT INPUT                                                                  │
+│ - Single-line text field                                                    │
+│ - Good for: names, short answers, single values                             │
+│ - Supports placeholder text                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ TEXT AREA                                                                   │
+│ - Multi-line text field                                                     │
+│ - Good for: detailed descriptions, long-form answers                        │
+│ - Supports placeholder text                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ DROPDOWN SELECT                                                             │
+│ - Choose one option from a dropdown menu                                    │
+│ - Good for: single-choice questions with predefined options                 │
+│ - Admin defines the available options                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ CHECKBOXES                                                                  │
+│ - Select multiple options from a list                                       │
+│ - Good for: multi-select questions, "select all that apply"                 │
+│ - Admin defines the available options                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ FILE UPLOAD                                                                 │
+│ - Upload one or more files                                                  │
+│ - Good for: logos, reference images, documents, assets                      │
+│ - Supports: images, PDFs, Word documents                                    │
+│ - Maximum 10MB per file                                                     │
+│ - Admin can set max file count (1-20)                                       │
+│ - Drag & drop or click to upload                                            │
+│ - Shows thumbnails for images, file names for documents                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ DATE PICKER                                                                 │
+│ - Select a date using native date picker                                    │
+│ - Good for: deadlines, launch dates, event dates                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ COLOR PICKER                                                                │
+│ - Choose a color using color picker or hex input                            │
+│ - Good for: brand colors, preferred colors                                  │
+│ - Shows both color swatch and hex value                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ URL INPUT                                                                   │
+│ - Enter a web URL                                                           │
+│ - Good for: reference websites, competitor links, inspirations              │
+│ - Validates URL format                                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+QUESTIONNAIRE INTERFACE:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ HEADER                                                                      │
+│ - Project name                                                              │
+│ - Back button to selection screen                                           │
+│ - Client email display                                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ PROGRESS BAR (for required questions)                                       │
+│ - Shows X of Y required questions answered                                  │
+│ - Percentage complete                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ QUESTION SECTIONS (collapsible)                                             │
+│                                                                             │
+│ ▼ General Questions [badge: count]                                          │
+│   ├── Question 1: [field]                                                   │
+│   └── Question 2: [field]                                                   │
+│                                                                             │
+│ ▼ Homepage [badge: count]                                                   │
+│   ├── Page Question 1: [field]                                              │
+│   ├── ── Hero Section ──                                                    │
+│   │   └── Section Question 1: [field]                                       │
+│   └── ── Footer ──                                                          │
+│       └── Section Question 2: [field]                                       │
+│                                                                             │
+│ ► About Us [badge: count] (collapsed)                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ SUBMIT BUTTON                                                               │
+│ - Enabled when all required questions are answered                          │
+│ - Disabled if required questions remain                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+SUBMISSION:
+- Client must answer all required questions to submit
+- Optional questions can be left blank
+- Previous responses are replaced on resubmission
+- Redirects to thank you page after successful submission
+
+================================================================================
+9. FILE UPLOAD SYSTEM
+================================================================================
+
+The application supports file uploads in two contexts:
+
+ADMIN SCREENSHOT UPLOADS:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Location: Admin Screenshots Tab                                             │
+│ Storage: Vercel Blob (cloud storage)                                        │
+│ Path format: {projectId}/{uniqueId}.{extension}                             │
+│                                                                             │
+│ Allowed file types:                                                         │
+│ - image/jpeg (.jpg, .jpeg)                                                  │
+│ - image/png (.png)                                                          │
+│ - image/webp (.webp)                                                        │
+│ - image/gif (.gif)                                                          │
+│ - image/svg+xml (.svg)                                                      │
+│                                                                             │
+│ Maximum file size: 10MB                                                     │
+│                                                                             │
+│ Upload methods:                                                             │
+│ - Click to browse and select file                                           │
+│ - Drag and drop files into the upload area                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+CLIENT QUESTIONNAIRE FILE UPLOADS:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Location: Client Questionnaire (file-type questions)                        │
+│ Storage: Vercel Blob (cloud storage)                                        │
+│ Path format: questionnaire/{projectId}/{questionId}/{uniqueId}.{extension}  │
+│                                                                             │
+│ Allowed file types:                                                         │
+│ - Images (JPEG, PNG, WebP, GIF, SVG, BMP)                                   │
+│ - PDF documents (.pdf)                                                      │
+│ - Word documents (.doc, .docx)                                              │
+│                                                                             │
+│ Maximum file size: 10MB per file                                            │
+│ Maximum files: Configurable per question (1-20)                             │
+│                                                                             │
+│ Upload methods:                                                             │
+│ - Click to browse and select file(s)                                        │
+│ - Drag and drop file(s) into the upload area                                │
+│ - Multiple files uploaded sequentially                                      │
+│                                                                             │
+│ Features:                                                                   │
+│ - Image preview thumbnails                                                  │
+│ - File name display for non-images                                          │
+│ - Remove individual files                                                   │
+│ - Progress indication during upload                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+10. AUTHENTICATION SYSTEM
+================================================================================
+
+ADMIN AUTHENTICATION:
+The application uses NextAuth.js for admin authentication.
+
+USER TYPES:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ENVIRONMENT USERS                                                           │
+│ - Defined in AUTH_USERS environment variable                                │
+│ - Format: email:password,email:password                                     │
+│ - Automatically verified, no email confirmation needed                      │
+│ - Good for: quick setup, development, single-admin use                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ SELF-REGISTERED USERS                                                       │
+│ - Register via /register page                                               │
+│ - Receive email verification link                                           │
+│ - Must verify email within 24 hours                                         │
+│ - Good for: multi-user setup, team access                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+PASSWORD REQUIREMENTS:
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+
+LOGIN FLOW:
+1. Navigate to /login
+2. Enter email and password
+3. If environment user: immediate access
+4. If self-registered user: must have verified email
+5. Session created using JWT strategy
+
+CLIENT ACCESS:
+Clients do NOT need authentication. They access via public project links and
+only need to provide an email address for identification purposes.
+
+================================================================================
+11. TECHNICAL ARCHITECTURE
+================================================================================
+
+TECHNOLOGY STACK:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Frontend                                                                    │
+│ - Next.js 14+ (App Router)                                                  │
+│ - React 18+                                                                 │
+│ - TypeScript                                                                │
+│ - Tailwind CSS                                                              │
+│ - Shadcn/ui components                                                      │
+│ - Lucide React icons                                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Backend                                                                     │
+│ - Next.js API Routes                                                        │
+│ - NextAuth.js for authentication                                            │
+│ - Zod for validation                                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Database                                                                    │
+│ - Turso (LibSQL/SQLite)                                                     │
+│ - @libsql/client for database access                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ File Storage                                                                │
+│ - Vercel Blob                                                               │
+│ - Public access URLs                                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Utilities                                                                   │
+│ - nanoid for unique ID generation                                           │
+│ - bcrypt for password hashing                                               │
+│ - sonner for toast notifications                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+FOLDER STRUCTURE:
+src/
+├── app/                    # Next.js App Router pages
+│   ├── admin/              # Admin pages (protected)
+│   │   ├── page.tsx        # Dashboard
+│   │   ├── projects/       # Project management
+│   │   ├── responses/      # Response viewing
+│   │   └── account/        # Account settings
+│   ├── api/                # API routes
+│   │   ├── auth/           # Authentication endpoints
+│   │   ├── projects/       # Project CRUD
+│   │   ├── pages/          # Page CRUD
+│   │   ├── sections/       # Section CRUD
+│   │   ├── screenshots/    # Screenshot CRUD
+│   │   ├── votes/          # Vote management
+│   │   ├── questions/      # Question CRUD
+│   │   ├── questionnaire/  # Questionnaire submission
+│   │   └── upload/         # File uploads
+│   ├── projects/           # Client-facing pages
+│   │   └── [slug]/         # Project voting/questionnaire
+│   ├── login/              # Login page
+│   └── register/           # Registration page
+├── components/
+│   ├── admin/              # Admin-specific components
+│   ├── client/             # Client-facing components
+│   └── ui/                 # Shadcn/ui components
+├── lib/
+│   ├── db/                 # Database connection and migrations
+│   ├── validators/         # Zod validation schemas
+│   └── utils.ts            # Utility functions
+└── types/
+    └── index.ts            # TypeScript interfaces
+
+DATA VALIDATION:
+All inputs are validated using Zod schemas:
+- Projects: name, type, description, slug
+- Pages/Sections: name, description, sort order
+- Screenshots: source type, file path/URL, parent reference
+- Votes: vote choice, comment, voter identifier
+- Questions: field type, scope, options, required status
+- Responses: value, file path
+
+SECURITY MEASURES:
+- All admin endpoints verify user authentication
+- Project ownership verified before any modifications
+- Passwords hashed with bcrypt (12 rounds)
+- CSRF protection via NextAuth
+- Input sanitization via Zod validation
+
+================================================================================
+12. WORKFLOW EXAMPLES
+================================================================================
+
+EXAMPLE 1: SETTING UP A NEW PROJECT
+
+Admin Workflow:
+1. Log in to /admin
+2. Click "Projects" -> "Create Project"
+3. Enter project name: "Acme Corp Website Redesign"
+4. Select type: "Web"
+5. Add description: "Complete website redesign for Acme Corporation"
+6. Project is created with auto-generated slug
+
+Adding Structure:
+1. Go to project -> "Pages & Sections" tab
+2. Create pages: "Homepage", "About Us", "Services", "Contact"
+3. For Homepage, create sections: "Hero", "Features", "Testimonials", "CTA"
+4. For About Us, create sections: "Team", "Mission", "History"
+
+Adding Screenshots:
+1. Go to "Screenshots" tab
+2. Select page: "Homepage"
+3. Click "Add Screenshot"
+4. Select section: "Hero"
+5. Upload image or paste URL
+6. Add title: "Hero Option A - Bold Design"
+7. Repeat for other options and sections
+
+Adding Questions:
+1. Go to "Questionnaire" tab
+2. Click "Add Question"
+3. Scope: "Entire Website"
+4. Field type: "Color Picker"
+5. Label: "What is your primary brand color?"
+6. Mark as required
+7. Add more questions as needed
+
+Sharing with Client:
+1. Go to "Details" tab
+2. Click "Copy Link"
+3. Send link to client: /projects/acme-corp-website-redesign
+
+─────────────────────────────────────────────────────────────────────────────
+
+EXAMPLE 2: CLIENT PROVIDING FEEDBACK
+
+Client Workflow:
+1. Open the shared link in browser
+2. Enter email address: "john@acmecorp.com"
+3. See selection screen with two options
+4. Click "Vote on Designs"
+
+Voting:
+1. First screenshot appears (Homepage / Hero)
+2. See "Page: Homepage, Section: Hero" overlay briefly
+3. View the design image
+4. Click "Yes" button (likes this design)
+5. Add comment: "Love the bold typography!"
+6. Click "Next"
+7. Continue voting on all screenshots
+8. See thumbnail strip with green/yellow/red indicators
+9. On last screenshot, click "Submit All Votes"
+10. See thank you page
+
+Questionnaire (if returning):
+1. Return to the project link
+2. Email is remembered
+3. See selection screen showing "Completed" badge on voting
+4. Click "Complete Questionnaire"
+5. Expand "General Questions" section
+6. Use color picker to select brand color
+7. Answer other questions
+8. Click "Submit Responses"
+9. See thank you page
+
+─────────────────────────────────────────────────────────────────────────────
+
+EXAMPLE 3: REVIEWING RESPONSES
+
+Admin Workflow:
+1. Log in to /admin
+2. Click "Responses" in navigation
+3. See summary: "15 votes, 3 questionnaire submissions"
+4. Click on "Acme Corp Website Redesign" project
+
+Reviewing Votes:
+1. See vote summary for each screenshot
+2. "Hero Option A": 3 Yes, 1 Maybe, 0 No
+3. Expand to see individual votes with comments
+4. "john@acmecorp.com voted Yes: Love the bold typography!"
+5. Identify which designs have the most approval
+
+Reviewing Questionnaire:
+1. Switch to questionnaire responses view
+2. See all submissions listed
+3. Filter by respondent: "john@acmecorp.com"
+4. View their color choice: #FF5733
+5. Download any uploaded files
+
+Making Decisions:
+1. Based on voting, proceed with highest-rated options
+2. Use questionnaire answers to inform project decisions
+3. Share results with your team
+
+================================================================================
+                               END OF DOCUMENTATION
+================================================================================
+
+Last Updated: January 2025
+Application: ClientHappy
+Version: 1.0
+
+For technical support or questions, please refer to the codebase documentation
+or contact the development team.
