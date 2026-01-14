@@ -56,19 +56,19 @@ export function SelectionScreen({
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold sm:text-xl">{project.name}</h1>
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-bold sm:text-xl">{project.name}</h1>
             {project.description && (
-              <p className="text-xs text-muted-foreground sm:text-sm">
+              <p className="hidden text-xs text-muted-foreground sm:block sm:text-sm">
                 {project.description}
               </p>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="truncate text-xs text-muted-foreground">
               {email}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
             <ThemeToggle />
             <Logo className="flex-shrink-0" />
           </div>

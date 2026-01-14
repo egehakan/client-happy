@@ -801,23 +801,23 @@ export function QuestionnaireInterface({
 
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
-        <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <Button
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="h-8 w-8"
+              className="h-8 w-8 flex-shrink-0"
               title="Back to selection"
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div>
-              <h1 className="text-lg font-bold sm:text-xl">{project.name}</h1>
-              <p className="text-xs text-muted-foreground">{email}</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-base font-bold sm:text-xl">{project.name}</h1>
+              <p className="truncate text-xs text-muted-foreground">{email}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
             {/* Auto-save status indicator */}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               {saveStatus === "saving" && (
