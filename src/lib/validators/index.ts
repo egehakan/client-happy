@@ -260,7 +260,7 @@ export const submitQuestionnaireSchema = z.object({
   responses: z.array(
     z.object({
       questionId: z.string().min(1),
-      value: z.string().max(10000).optional().nullable(),
+      value: z.string().max(5000000).optional().nullable(),
       filePath: z.string().optional().nullable(),
     })
   ),

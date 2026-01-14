@@ -11,7 +11,7 @@ const ALLOWED_TYPES = [
   "image/svg+xml",
 ];
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_SIZE = 30 * 1024 * 1024; // 30MB
 
 export async function POST(request: Request) {
   const { session, error } = await requireAuth();
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
 
     if (file.size > MAX_SIZE) {
       return NextResponse.json(
-        { error: "File too large. Maximum size is 10MB" },
+        { error: "File too large. Maximum size is 30MB" },
         { status: 400 }
       );
     }

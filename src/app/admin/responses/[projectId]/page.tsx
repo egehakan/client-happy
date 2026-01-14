@@ -11,6 +11,7 @@ import {
   type VoteRow,
   type QuestionRow,
   type QuestionResponseRow,
+  type QuestionGroupRow,
   projectFromRow,
   pageFromRow,
   sectionFromRow,
@@ -18,6 +19,7 @@ import {
   voteFromRow,
   questionFromRow,
   questionResponseFromRow,
+  questionGroupFromRow,
 } from "@/types";
 import { ArrowLeft } from "lucide-react";
 import { ResponsesFilter } from "@/components/admin/responses-filter";
@@ -181,6 +183,15 @@ async function getProjectResponseData(projectId: string, userId: string) {
   });
   const questionRows = questionsResult.rows as unknown as QuestionRow[];
 
+  // Get question groups
+  const questionGroupsResult = await db.execute({
+    sql: "SELECT * FROM question_groups WHERE project_id = ? ORDER BY sort_order",
+    args: [projectId],
+  });
+  const questionGroups = questionGroupsResult.rows.map((row) =>
+    questionGroupFromRow(row as unknown as QuestionGroupRow)
+  );
+
   // Build page and section maps for scope names
   const pageMap = new Map<string, string>();
   const sectionMap = new Map<string, { name: string; pageName: string }>();
@@ -246,6 +257,21 @@ async function getProjectResponseData(projectId: string, userId: string) {
   const allEmails = new Set([...voteEmails, ...respondentEmails]);
   const uniqueEmails = Array.from(allEmails).sort();
 
+  // Get all pages sorted for hierarchical display
+  const allPagesSorted = pageRows.map((row) => pageFromRow(row)).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Get all sections sorted
+  const sectionsSortedResult = await db.execute({
+    sql: `SELECT s.* FROM sections s
+          JOIN pages p ON s.page_id = p.id
+          WHERE p.project_id = ?
+          ORDER BY s.sort_order`,
+    args: [projectId],
+  });
+  const allSectionsSorted = sectionsSortedResult.rows
+    .map((row) => sectionFromRow(row as unknown as SectionRow))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
   return {
     project,
     pages,
@@ -253,6 +279,9 @@ async function getProjectResponseData(projectId: string, userId: string) {
     questionsWithResponses,
     totalRespondents,
     uniqueEmails,
+    questionGroups,
+    allPages: allPagesSorted,
+    allSections: allSectionsSorted,
   };
 }
 
@@ -265,8 +294,17 @@ export default async function ProjectResponsesPage({ params }: PageProps) {
 
   if (!data) notFound();
 
-  const { project, pages, totalVotes, questionsWithResponses, totalRespondents, uniqueEmails } =
-    data;
+  const {
+    project,
+    pages,
+    totalVotes,
+    questionsWithResponses,
+    totalRespondents,
+    uniqueEmails,
+    questionGroups,
+    allPages,
+    allSections,
+  } = data;
 
   return (
     <div>
@@ -292,6 +330,9 @@ export default async function ProjectResponsesPage({ params }: PageProps) {
         questionsWithResponses={questionsWithResponses}
         totalRespondents={totalRespondents}
         uniqueEmails={uniqueEmails}
+        questionGroups={questionGroups}
+        allPages={allPages}
+        allSections={allSections}
       />
     </div>
   );

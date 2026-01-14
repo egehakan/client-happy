@@ -91,30 +91,30 @@ export async function POST(request: Request) {
       const { votes, voterIdentifier } = result.data;
       const insertedVotes: VoteRow[] = [];
 
-      // Delete existing votes for this voter on these screenshots (allows overwriting)
-      for (const v of votes) {
-        await db.execute({
-          sql: "DELETE FROM votes WHERE screenshot_id = ? AND voter_identifier = ?",
-          args: [v.screenshotId, voterIdentifier],
-        });
-      }
-
-      // Insert votes one by one (Turso doesn't support transactions the same way)
+      // Upsert votes one by one (atomic operation to handle concurrent saves)
       for (const v of votes) {
         const id = nanoid();
         await db.execute({
-          sql: `INSERT INTO votes (id, screenshot_id, vote, comment, voter_identifier) VALUES (?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO votes (id, screenshot_id, vote, comment, voter_identifier)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (screenshot_id, voter_identifier)
+                DO UPDATE SET vote = excluded.vote, comment = excluded.comment, updated_at = CURRENT_TIMESTAMP`,
           args: [id, v.screenshotId, v.vote, v.comment ?? null, voterIdentifier ?? null],
         });
 
         const row = await db.execute({
-          sql: "SELECT * FROM votes WHERE id = ?",
-          args: [id],
+          sql: "SELECT * FROM votes WHERE screenshot_id = ? AND voter_identifier = ?",
+          args: [v.screenshotId, voterIdentifier],
         });
-        insertedVotes.push(row.rows[0] as unknown as VoteRow);
+        if (row.rows[0]) {
+          insertedVotes.push(row.rows[0] as unknown as VoteRow);
+        }
       }
 
-      return NextResponse.json(insertedVotes.map(voteFromRow), { status: 201 });
+      return NextResponse.json(
+        insertedVotes.filter(Boolean).map(voteFromRow),
+        { status: 201 }
+      );
     }
 
     // Single vote

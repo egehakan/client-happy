@@ -296,4 +296,52 @@ export async function initializeSchema(): Promise<void> {
   } catch (migrationError) {
     console.error("Screenshots table migration check/run failed:", migrationError);
   }
+
+  // Migration: Add updated_at and UNIQUE constraint to votes table for auto-save
+  try {
+    const testResult = await db.execute({
+      sql: "SELECT sql FROM sqlite_master WHERE type='table' AND name='votes'",
+      args: [],
+    });
+    const createSql = (testResult.rows[0] as unknown as { sql: string })?.sql || "";
+
+    // Check if migration is needed (no UNIQUE constraint and no updated_at)
+    if (!createSql.includes("UNIQUE") && !createSql.includes("updated_at")) {
+      console.log("Migrating votes table to add UNIQUE constraint and updated_at...");
+
+      // Create new table with UNIQUE constraint and updated_at
+      await db.execute(`
+        CREATE TABLE votes_new (
+          id TEXT PRIMARY KEY,
+          screenshot_id TEXT NOT NULL REFERENCES screenshots(id) ON DELETE CASCADE,
+          vote TEXT NOT NULL CHECK (vote IN ('yes', 'mid', 'no')),
+          comment TEXT,
+          voter_identifier TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(screenshot_id, voter_identifier)
+        )
+      `);
+
+      // Copy data from old table (keeping only the latest vote per screenshot+voter)
+      await db.execute(`
+        INSERT OR REPLACE INTO votes_new (id, screenshot_id, vote, comment, voter_identifier, created_at, updated_at)
+        SELECT id, screenshot_id, vote, comment, voter_identifier, created_at, created_at
+        FROM votes
+      `);
+
+      // Drop old table
+      await db.execute("DROP TABLE votes");
+
+      // Rename new table
+      await db.execute("ALTER TABLE votes_new RENAME TO votes");
+
+      // Recreate index
+      await db.execute("CREATE INDEX IF NOT EXISTS idx_votes_screenshot_id ON votes(screenshot_id)");
+
+      console.log("Votes table migration complete.");
+    }
+  } catch (migrationError) {
+    console.error("Votes table migration check/run failed:", migrationError);
+  }
 }

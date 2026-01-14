@@ -15,7 +15,7 @@ const ALLOWED_TYPES = [
   "image/svg+xml",
 ];
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB per file
+const MAX_SIZE = 30 * 1024 * 1024; // 30MB per file
 const MAX_FILES = 10;
 
 export async function POST(request: Request) {
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       }
       if (file.size > MAX_SIZE) {
         return NextResponse.json(
-          { error: `File ${file.name} is too large. Maximum size is 10MB` },
+          { error: `File ${file.name} is too large. Maximum size is 30MB` },
           { status: 400 }
         );
       }

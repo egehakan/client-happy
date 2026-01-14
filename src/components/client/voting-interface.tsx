@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { type Project, type Page, type Section, type Screenshot, type Question, type QuestionGroup } from "@/types";
@@ -18,12 +18,17 @@ import {
 } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { ThumbsUp, Minus, ThumbsDown, ChevronLeft, ChevronRight, Send, ArrowLeft } from "lucide-react";
+import { ThumbsUp, Minus, ThumbsDown, ChevronLeft, ChevronRight, ArrowLeft, Loader2, Check, AlertCircle } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { EmailEntry } from "@/components/client/email-entry";
 import { SelectionScreen } from "@/components/client/selection-screen";
 import { QuestionnaireInterface } from "@/components/client/questionnaire-interface";
+
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+const AUTOSAVE_DELAY = 1000; // 1 second debounce for comments
+const VOTE_SAVE_DELAY = 300; // Faster save for vote clicks
 
 interface CompletionStatus {
   voting: {
@@ -87,6 +92,12 @@ export function VotingInterface({
   const [votes, setVotes] = useState<Record<string, VoteState>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completionStatus, setCompletionStatus] = useState<CompletionStatus | null>(null);
+
+  // Auto-save state
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const pendingChangesRef = useRef<Set<string>>(new Set());
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitialLoadRef = useRef(true);
 
   const hasScreenshots = screenshots.length > 0;
   const hasQuestions = questions.length > 0;
@@ -251,8 +262,100 @@ export function VotingInterface({
       }
     } catch (err) {
       console.error("Failed to fetch existing votes:", err);
+    } finally {
+      // Mark initial load as complete after a brief delay
+      setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 100);
     }
   }
+
+  // Auto-save function
+  const saveVotes = useCallback(async (votesToSave: Record<string, VoteState>, screenshotIds: string[]) => {
+    if (screenshotIds.length === 0 || !voterEmail) return;
+
+    setSaveStatus("saving");
+
+    try {
+      const votesPayload = screenshotIds
+        .filter((id) => votesToSave[id]?.vote !== null)
+        .map((id) => ({
+          screenshotId: id,
+          vote: votesToSave[id].vote!,
+          comment: votesToSave[id].comment || undefined,
+        }));
+
+      if (votesPayload.length === 0) {
+        setSaveStatus("saved");
+        return;
+      }
+
+      const response = await fetch("/api/votes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          votes: votesPayload,
+          voterIdentifier: voterEmail,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to save");
+
+      setSaveStatus("saved");
+
+      // Clear saved screenshots from pending
+      screenshotIds.forEach((id) => pendingChangesRef.current.delete(id));
+    } catch (err) {
+      console.error("Auto-save failed:", err);
+      setSaveStatus("error");
+      toast.error("Failed to save. Will retry...");
+
+      // Retry after 3 seconds
+      setTimeout(() => {
+        if (pendingChangesRef.current.size > 0) {
+          triggerAutoSave(AUTOSAVE_DELAY);
+        }
+      }, 3000);
+    }
+  }, [voterEmail]);
+
+  // Debounced auto-save trigger
+  const triggerAutoSave = useCallback((delay: number = AUTOSAVE_DELAY) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      const screenshotIds = Array.from(pendingChangesRef.current);
+      if (screenshotIds.length > 0) {
+        setVotes((current) => {
+          saveVotes(current, screenshotIds);
+          return current;
+        });
+      }
+    }, delay);
+  }, [saveVotes]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Save before leaving page
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (pendingChangesRef.current.size > 0) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   async function handleSelectVoting() {
     setFlowState("voting");
@@ -283,6 +386,12 @@ export function VotingInterface({
         comment: prev[currentScreenshot.id]?.comment || "",
       },
     }));
+
+    // Trigger auto-save with shorter delay for votes
+    if (!isInitialLoadRef.current) {
+      pendingChangesRef.current.add(currentScreenshot.id);
+      triggerAutoSave(VOTE_SAVE_DELAY);
+    }
   }
 
   function handleCommentChange(comment: string) {
@@ -295,6 +404,12 @@ export function VotingInterface({
         comment,
       },
     }));
+
+    // Trigger auto-save with longer delay for typing
+    if (!isInitialLoadRef.current) {
+      pendingChangesRef.current.add(currentScreenshot.id);
+      triggerAutoSave(AUTOSAVE_DELAY);
+    }
   }
 
   function goToPrevious() {
@@ -309,36 +424,27 @@ export function VotingInterface({
     }
   }
 
-  async function handleSubmit() {
+  async function handleComplete() {
     if (!hasAnyVotes) {
-      toast.error("Please vote on at least one screenshot before submitting");
+      toast.error("Please vote on at least one screenshot before completing");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Only submit screenshots that have been voted on
-      const votesToSubmit = screenshots
-        .filter((s) => votes[s.id]?.vote !== null && votes[s.id]?.vote !== undefined)
-        .map((s) => ({
-          screenshotId: s.id,
-          vote: votes[s.id].vote!,
-          comment: votes[s.id].comment || undefined,
-        }));
+      // Save any pending changes before completing
+      if (pendingChangesRef.current.size > 0) {
+        const screenshotIds = Array.from(pendingChangesRef.current);
+        await saveVotes(votes, screenshotIds);
+      }
 
-      const response = await fetch("/api/votes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ votes: votesToSubmit, voterIdentifier: voterEmail }),
-      });
-
-      if (!response.ok) throw new Error("Failed to submit votes");
+      // Wait a moment to ensure save completes
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       router.push(`/projects/${project.slug}/thank-you`);
     } catch {
-      toast.error("Failed to submit votes. Please try again.");
-    } finally {
+      toast.error("Failed to save. Please try again.");
       setIsSubmitting(false);
     }
   }
@@ -412,7 +518,7 @@ export function VotingInterface({
       <Toaster />
 
       {/* Header */}
-      <header className="border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
+      <header className="sticky top-0 z-50 border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-3">
             {needsSelectionScreen && (
@@ -439,6 +545,27 @@ export function VotingInterface({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Auto-save status indicator */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {saveStatus === "saving" && (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span className="hidden sm:inline">Saving...</span>
+                </>
+              )}
+              {saveStatus === "saved" && (
+                <>
+                  <Check className="h-3.5 w-3.5 text-green-500" />
+                  <span className="hidden sm:inline">Saved</span>
+                </>
+              )}
+              {saveStatus === "error" && (
+                <>
+                  <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                  <span className="hidden sm:inline">Error</span>
+                </>
+              )}
+            </div>
             <ThemeToggle />
             <Logo className="flex-shrink-0" />
           </div>
@@ -553,6 +680,11 @@ export function VotingInterface({
             )}
 
             {/* Vote Buttons */}
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-xs text-muted-foreground">
+                Your selections are automatically saved
+              </p>
+            </div>
             <div className="flex justify-center gap-2 sm:gap-4">
               <Button
                 variant={currentVote.vote === "yes" ? "default" : "outline"}
@@ -617,13 +749,22 @@ export function VotingInterface({
 
               {currentIndex === screenshots.length - 1 ? (
                 <Button
-                  onClick={handleSubmit}
-                  disabled={isSubmitting || !hasAnyVotes}
+                  onClick={handleComplete}
+                  disabled={isSubmitting || !hasAnyVotes || saveStatus === "saving"}
                   size="sm"
                   className="sm:size-default"
                 >
-                  <Send className="h-4 w-4 sm:mr-2" />
-                  <span className="sm:hidden">{isSubmitting ? "..." : "Submit"}</span>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin sm:mr-2" />
+                      <span className="hidden sm:inline">Completing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Complete</span>
+                    </>
+                  )}
                 </Button>
               ) : (
                 <Button onClick={goToNext} size="sm" className="sm:size-default">

@@ -32,28 +32,29 @@ export async function POST(request: Request) {
         continue; // Skip invalid question IDs
       }
 
-      // Delete existing response for this email + question (upsert behavior)
-      await db.execute({
-        sql: "DELETE FROM question_responses WHERE question_id = ? AND respondent_email = ?",
-        args: [response.questionId, respondentEmail],
-      });
-
-      // Insert new response
+      // Upsert response (atomic operation to handle concurrent saves)
       const id = nanoid();
       await db.execute({
         sql: `INSERT INTO question_responses (id, question_id, respondent_email, value, file_path)
-              VALUES (?, ?, ?, ?, ?)`,
+              VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT (question_id, respondent_email)
+              DO UPDATE SET value = excluded.value, file_path = excluded.file_path, updated_at = CURRENT_TIMESTAMP`,
         args: [id, response.questionId, respondentEmail, response.value ?? null, response.filePath ?? null],
       });
 
       const row = await db.execute({
-        sql: "SELECT * FROM question_responses WHERE id = ?",
-        args: [id],
+        sql: "SELECT * FROM question_responses WHERE question_id = ? AND respondent_email = ?",
+        args: [response.questionId, respondentEmail],
       });
-      insertedResponses.push(row.rows[0] as unknown as QuestionResponseRow);
+      if (row.rows[0]) {
+        insertedResponses.push(row.rows[0] as unknown as QuestionResponseRow);
+      }
     }
 
-    return NextResponse.json(insertedResponses.map(questionResponseFromRow), { status: 201 });
+    return NextResponse.json(
+      insertedResponses.filter(Boolean).map(questionResponseFromRow),
+      { status: 201 }
+    );
   } catch (err) {
     console.error("Failed to submit questionnaire:", err);
     return NextResponse.json({ error: "Failed to submit questionnaire" }, { status: 500 });

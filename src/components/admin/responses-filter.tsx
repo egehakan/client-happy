@@ -7,6 +7,9 @@ import {
   type Vote,
   type Question,
   type QuestionResponse,
+  type QuestionGroup,
+  type Page as PageType,
+  type Section as SectionType,
 } from "@/types";
 import {
   Card,
@@ -44,6 +47,9 @@ import {
   Image as ImageIcon,
   File,
   Filter,
+  Globe,
+  Layout,
+  Folder,
 } from "lucide-react";
 import { ResetVotesButton } from "@/components/admin/reset-votes-button";
 import { ResetQuestionnaireButton } from "@/components/admin/reset-questionnaire-button";
@@ -112,6 +118,9 @@ interface ResponsesFilterProps {
   questionsWithResponses: QuestionWithResponses[];
   totalRespondents: number;
   uniqueEmails: string[];
+  questionGroups: QuestionGroup[];
+  allPages: PageType[];
+  allSections: SectionType[];
 }
 
 function VoteSummaryBar({
@@ -472,8 +481,47 @@ export function ResponsesFilter({
   questionsWithResponses,
   totalRespondents,
   uniqueEmails,
+  questionGroups,
+  allPages,
+  allSections,
 }: ResponsesFilterProps) {
   const [filterEmail, setFilterEmail] = useState<string | null>(null);
+
+  // Helper to get questions for a group (sorted by sortOrder)
+  function getQuestionsForGroup(
+    questions: QuestionWithResponses[],
+    groupId: string | null,
+    scopeType?: string,
+    scopeId?: string | null
+  ) {
+    return questions
+      .filter((q) => {
+        if (q.question.groupId !== groupId) return false;
+        if (scopeType !== undefined && q.question.scopeType !== scopeType) return false;
+        if (scopeId !== undefined && q.question.scopeId !== scopeId) return false;
+        return true;
+      })
+      .sort((a, b) => a.question.sortOrder - b.question.sortOrder);
+  }
+
+  // Helper to get groups for a scope (sorted by sortOrder)
+  function getGroupsForScope(scopeType: string, scopeId: string | null) {
+    return questionGroups
+      .filter(
+        (g) =>
+          g.scopeType === scopeType &&
+          (scopeId === null ? g.scopeId === null : g.scopeId === scopeId)
+      )
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // Sort pages and get sections helper
+  const sortedPages = [...allPages].sort((a, b) => a.sortOrder - b.sortOrder);
+  const getSortedSections = (pageId: string) =>
+    allSections.filter((s) => s.pageId === pageId).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Check if we're using scoped groups
+  const hasNewScopedGroups = questionGroups.some((g) => g.scopeType !== null);
 
   // Calculate filtered totals
   const filteredData = useMemo(() => {
@@ -709,8 +757,7 @@ export function ResponsesFilter({
                       <CardDescription>
                         {filterEmail
                           ? `Responses from ${filterEmail}`
-                          : `${totalRespondents} unique respondent${totalRespondents !== 1 ? "s" : ""} across ${questionsWithResponses.length} question${questionsWithResponses.length !== 1 ? "s" : ""}`
-                        }
+                          : `${totalRespondents} unique respondent${totalRespondents !== 1 ? "s" : ""} across ${questionsWithResponses.length} question${questionsWithResponses.length !== 1 ? "s" : ""}`}
                       </CardDescription>
                     </div>
                     {!filterEmail && totalRespondents > 0 && (
@@ -724,62 +771,274 @@ export function ResponsesFilter({
                 </CardHeader>
               </Card>
 
-              {/* Website-scoped questions */}
-              {websiteQuestions.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      Website Questions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {websiteQuestions.map((data) => (
-                      <QuestionResponseDisplay
-                        key={data.question.id}
-                        data={data}
-                        filterEmail={filterEmail}
-                      />
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
+              {hasNewScopedGroups ? (
+                <>
+                  {/* Website-scoped questions */}
+                  {(getGroupsForScope("website", null).length > 0 ||
+                    getQuestionsForGroup(filteredData.questionsWithResponses, null, "website", null).length > 0) && (
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center gap-2">
+                          <Globe className="h-5 w-5" />
+                          <CardTitle className="text-base">Website Questions</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        {/* Groups */}
+                        {getGroupsForScope("website", null).map((group) => {
+                          const groupQuestions = getQuestionsForGroup(
+                            filteredData.questionsWithResponses,
+                            group.id,
+                            "website",
+                            null
+                          );
+                          if (groupQuestions.length === 0) return null;
+                          return (
+                            <div key={group.id} className="space-y-4">
+                              <div className="border-b pb-2">
+                                <h4 className="font-medium">{group.name}</h4>
+                                {group.description && (
+                                  <p className="text-sm text-muted-foreground">{group.description}</p>
+                                )}
+                              </div>
+                              <div className="space-y-4 pl-4">
+                                {groupQuestions.map((data) => (
+                                  <QuestionResponseDisplay
+                                    key={data.question.id}
+                                    data={data}
+                                    filterEmail={filterEmail}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {/* Ungrouped */}
+                        {getQuestionsForGroup(filteredData.questionsWithResponses, null, "website", null).map((data) => (
+                          <QuestionResponseDisplay
+                            key={data.question.id}
+                            data={data}
+                            filterEmail={filterEmail}
+                          />
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
 
-              {/* Page-scoped questions */}
-              {pageQuestions.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Page Questions</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {pageQuestions.map((data) => (
-                      <QuestionResponseDisplay
-                        key={data.question.id}
-                        data={data}
-                        filterEmail={filterEmail}
-                      />
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
+                  {/* Pages with their sections */}
+                  {sortedPages.map((page) => {
+                    const pageSections = getSortedSections(page.id);
+                    const hasPageQuestions =
+                      getGroupsForScope("page", page.id).length > 0 ||
+                      getQuestionsForGroup(filteredData.questionsWithResponses, null, "page", page.id).length > 0;
+                    const hasSectionQuestions = pageSections.some(
+                      (section) =>
+                        getGroupsForScope("section", section.id).length > 0 ||
+                        getQuestionsForGroup(filteredData.questionsWithResponses, null, "section", section.id).length > 0
+                    );
 
-              {/* Section-scoped questions */}
-              {sectionQuestions.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      Section Questions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {sectionQuestions.map((data) => (
-                      <QuestionResponseDisplay
-                        key={data.question.id}
-                        data={data}
-                        filterEmail={filterEmail}
-                      />
-                    ))}
-                  </CardContent>
-                </Card>
+                    if (!hasPageQuestions && !hasSectionQuestions) return null;
+
+                    return (
+                      <Card key={page.id}>
+                        <CardHeader>
+                          <div className="flex items-center gap-2">
+                            <Layout className="h-5 w-5" />
+                            <CardTitle className="text-base">{page.name}</CardTitle>
+                          </div>
+                          {page.description && (
+                            <CardDescription>{page.description}</CardDescription>
+                          )}
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                          {/* Sections first */}
+                          {pageSections.map((section) => {
+                            const sectionGroups = getGroupsForScope("section", section.id);
+                            const ungroupedSectionQuestions = getQuestionsForGroup(
+                              filteredData.questionsWithResponses,
+                              null,
+                              "section",
+                              section.id
+                            );
+
+                            if (sectionGroups.length === 0 && ungroupedSectionQuestions.length === 0) {
+                              return null;
+                            }
+
+                            return (
+                              <div key={section.id} className="space-y-4">
+                                <div className="flex items-center gap-2 border-b pb-2">
+                                  <Folder className="h-4 w-4 text-muted-foreground" />
+                                  <h4 className="font-medium">{section.name}</h4>
+                                </div>
+                                <div className="space-y-4 pl-4">
+                                  {/* Section groups */}
+                                  {sectionGroups.map((group) => {
+                                    const groupQuestions = getQuestionsForGroup(
+                                      filteredData.questionsWithResponses,
+                                      group.id,
+                                      "section",
+                                      section.id
+                                    );
+                                    if (groupQuestions.length === 0) return null;
+                                    return (
+                                      <div key={group.id} className="space-y-4">
+                                        <div className="border-b pb-2">
+                                          <h5 className="text-sm font-medium">{group.name}</h5>
+                                          {group.description && (
+                                            <p className="text-sm text-muted-foreground">
+                                              {group.description}
+                                            </p>
+                                          )}
+                                        </div>
+                                        <div className="space-y-4 pl-4">
+                                          {groupQuestions.map((data) => (
+                                            <QuestionResponseDisplay
+                                              key={data.question.id}
+                                              data={data}
+                                              filterEmail={filterEmail}
+                                            />
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {/* Ungrouped section questions */}
+                                  {ungroupedSectionQuestions.map((data) => (
+                                    <QuestionResponseDisplay
+                                      key={data.question.id}
+                                      data={data}
+                                      filterEmail={filterEmail}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {/* Page-level groups and questions */}
+                          {(getGroupsForScope("page", page.id).length > 0 ||
+                            getQuestionsForGroup(filteredData.questionsWithResponses, null, "page", page.id).length > 0) && (
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2 border-b pb-2">
+                                <Layout className="h-4 w-4 text-muted-foreground" />
+                                <h4 className="font-medium">Page Questions</h4>
+                              </div>
+                              <div className="space-y-4 pl-4">
+                                {/* Page groups */}
+                                {getGroupsForScope("page", page.id).map((group) => {
+                                  const groupQuestions = getQuestionsForGroup(
+                                    filteredData.questionsWithResponses,
+                                    group.id,
+                                    "page",
+                                    page.id
+                                  );
+                                  if (groupQuestions.length === 0) return null;
+                                  return (
+                                    <div key={group.id} className="space-y-4">
+                                      <div className="border-b pb-2">
+                                        <h5 className="text-sm font-medium">{group.name}</h5>
+                                        {group.description && (
+                                          <p className="text-sm text-muted-foreground">
+                                            {group.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="space-y-4 pl-4">
+                                        {groupQuestions.map((data) => (
+                                          <QuestionResponseDisplay
+                                            key={data.question.id}
+                                            data={data}
+                                            filterEmail={filterEmail}
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                {/* Ungrouped page questions */}
+                                {getQuestionsForGroup(filteredData.questionsWithResponses, null, "page", page.id).map(
+                                  (data) => (
+                                    <QuestionResponseDisplay
+                                      key={data.question.id}
+                                      data={data}
+                                      filterEmail={filterEmail}
+                                    />
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </>
+              ) : (
+                <>
+                  {/* Legacy flat display - Website questions */}
+                  {websiteQuestions.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center gap-2">
+                          <Globe className="h-5 w-5" />
+                          <CardTitle className="text-base">Website Questions</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {websiteQuestions.map((data) => (
+                          <QuestionResponseDisplay
+                            key={data.question.id}
+                            data={data}
+                            filterEmail={filterEmail}
+                          />
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Legacy - Page questions */}
+                  {pageQuestions.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center gap-2">
+                          <Layout className="h-5 w-5" />
+                          <CardTitle className="text-base">Page Questions</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {pageQuestions.map((data) => (
+                          <QuestionResponseDisplay
+                            key={data.question.id}
+                            data={data}
+                            filterEmail={filterEmail}
+                          />
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Legacy - Section questions */}
+                  {sectionQuestions.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center gap-2">
+                          <Folder className="h-5 w-5" />
+                          <CardTitle className="text-base">Section Questions</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {sectionQuestions.map((data) => (
+                          <QuestionResponseDisplay
+                            key={data.question.id}
+                            data={data}
+                            filterEmail={filterEmail}
+                          />
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
               )}
             </div>
           )}

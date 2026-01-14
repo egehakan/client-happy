@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   type Project,
@@ -19,7 +19,6 @@ import { Progress } from "@/components/ui/progress";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -46,11 +45,13 @@ import {
   Globe,
   FileText,
   Layout,
-  Send,
   ArrowLeft,
   Upload,
   X,
   Folder,
+  Loader2,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 
 interface QuestionWithContext extends Question {
@@ -82,6 +83,10 @@ interface ResponseState {
   };
 }
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+const AUTOSAVE_DELAY = 1000; // 1 second debounce
+
 export function QuestionnaireInterface({
   project,
   questions,
@@ -100,6 +105,12 @@ export function QuestionnaireInterface({
   const [isLoadingResponses, setIsLoadingResponses] = useState(true);
   const [uploadingFor, setUploadingFor] = useState<string | null>(null);
   const [dragOverFor, setDragOverFor] = useState<string | null>(null);
+
+  // Auto-save state
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const pendingChangesRef = useRef<Set<string>>(new Set());
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitialLoadRef = useRef(true);
 
   // Group questions by scope
   const websiteQuestions = questions.filter((q) => q.scopeType === "website");
@@ -135,19 +146,6 @@ export function QuestionnaireInterface({
 
   // Check if we're using scoped groups (new style) vs flat groups
   const hasNewScopedGroups = questionGroups.some(g => g.scopeType !== null);
-
-  // Get page name helper
-  function getPageName(pageId: string): string {
-    return pages.find((p) => p.id === pageId)?.name || "Unknown Page";
-  }
-
-  // Get section with page name helper
-  function getSectionInfo(sectionId: string): { sectionName: string; pageName: string } {
-    const section = sections.find((s) => s.id === sectionId);
-    if (!section) return { sectionName: "Unknown Section", pageName: "" };
-    const page = pages.find((p) => p.id === section.pageId);
-    return { sectionName: section.name, pageName: page?.name || "" };
-  }
 
   // Calculate progress
   const requiredQuestions = questions.filter((q) => q.isRequired);
@@ -232,11 +230,105 @@ export function QuestionnaireInterface({
         console.error("Failed to fetch existing responses:", err);
       } finally {
         setIsLoadingResponses(false);
+        // Mark initial load as complete after a brief delay
+        setTimeout(() => {
+          isInitialLoadRef.current = false;
+        }, 100);
       }
     }
 
     fetchResponses();
   }, [email, questions]);
+
+  // Auto-save function
+  const saveResponses = useCallback(async (responsesToSave: ResponseState, questionIds: string[]) => {
+    if (questionIds.length === 0) return;
+
+    setSaveStatus("saving");
+
+    try {
+      const responsesPayload = questionIds
+        .filter((qId) => {
+          const resp = responsesToSave[qId];
+          return resp && (resp.value !== null || resp.filePath !== null);
+        })
+        .map((qId) => ({
+          questionId: qId,
+          value: responsesToSave[qId]?.value || null,
+          filePath: responsesToSave[qId]?.filePath || null,
+        }));
+
+      if (responsesPayload.length === 0) {
+        setSaveStatus("saved");
+        return;
+      }
+
+      const response = await fetch("/api/questionnaire", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          responses: responsesPayload,
+          respondentEmail: email,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to save");
+
+      setSaveStatus("saved");
+
+      // Clear saved questions from pending
+      questionIds.forEach((qId) => pendingChangesRef.current.delete(qId));
+    } catch (err) {
+      console.error("Auto-save failed:", err);
+      setSaveStatus("error");
+      toast.error("Failed to save changes. Will retry...");
+
+      // Retry after 3 seconds
+      setTimeout(() => {
+        if (pendingChangesRef.current.size > 0) {
+          triggerAutoSave();
+        }
+      }, 3000);
+    }
+  }, [email]);
+
+  // Debounced auto-save trigger
+  const triggerAutoSave = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      const questionIds = Array.from(pendingChangesRef.current);
+      if (questionIds.length > 0) {
+        setResponses((current) => {
+          saveResponses(current, questionIds);
+          return current;
+        });
+      }
+    }, AUTOSAVE_DELAY);
+  }, [saveResponses]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Save before leaving page
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (pendingChangesRef.current.size > 0) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   function toggleSection(sectionId: string) {
     const newOpen = new Set(openSections);
@@ -251,7 +343,8 @@ export function QuestionnaireInterface({
   function updateResponse(
     questionId: string,
     value: string | null,
-    filePath?: string | null
+    filePath?: string | null,
+    skipAutoSave?: boolean
   ) {
     setResponses((prev) => ({
       ...prev,
@@ -261,6 +354,12 @@ export function QuestionnaireInterface({
         filePath: filePath !== undefined ? filePath : prev[questionId]?.filePath || null,
       },
     }));
+
+    // Trigger auto-save (unless skipped or during initial load)
+    if (!skipAutoSave && !isInitialLoadRef.current) {
+      pendingChangesRef.current.add(questionId);
+      triggerAutoSave();
+    }
   }
 
   function updateCheckboxResponse(questionId: string, option: string, checked: boolean) {
@@ -279,6 +378,12 @@ export function QuestionnaireInterface({
         },
       };
     });
+
+    // Trigger auto-save
+    if (!isInitialLoadRef.current) {
+      pendingChangesRef.current.add(questionId);
+      triggerAutoSave();
+    }
   }
 
   async function handleFileUpload(questionId: string, file: File, maxFiles: number) {
@@ -328,6 +433,10 @@ export function QuestionnaireInterface({
         };
       });
 
+      // Trigger auto-save immediately for file uploads
+      pendingChangesRef.current.add(questionId);
+      triggerAutoSave();
+
       toast.success("File uploaded");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to upload file");
@@ -363,9 +472,13 @@ export function QuestionnaireInterface({
         },
       };
     });
+
+    // Trigger auto-save
+    pendingChangesRef.current.add(questionId);
+    triggerAutoSave();
   }
 
-  async function handleSubmit() {
+  async function handleComplete() {
     // Check required fields
     const missingRequired = requiredQuestions.filter((q) => {
       const resp = responses[q.id];
@@ -385,30 +498,20 @@ export function QuestionnaireInterface({
     }
 
     setIsSubmitting(true);
+
     try {
-      const responsesToSubmit = questions
-        .filter((q) => responses[q.id]?.value || responses[q.id]?.filePath)
-        .map((q) => ({
-          questionId: q.id,
-          value: responses[q.id]?.value || null,
-          filePath: responses[q.id]?.filePath || null,
-        }));
+      // Save any pending changes before completing
+      if (pendingChangesRef.current.size > 0) {
+        const questionIds = Array.from(pendingChangesRef.current);
+        await saveResponses(responses, questionIds);
+      }
 
-      const response = await fetch("/api/questionnaire", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          responses: responsesToSubmit,
-          respondentEmail: email,
-        }),
-      });
-
-      if (!response.ok) throw new Error("Failed to submit questionnaire");
+      // Wait a moment to ensure save completes
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       router.push(`/projects/${project.slug}/thank-you`);
     } catch {
-      toast.error("Failed to submit questionnaire. Please try again.");
-    } finally {
+      toast.error("Failed to save. Please try again.");
       setIsSubmitting(false);
     }
   }
@@ -599,7 +702,7 @@ export function QuestionnaireInterface({
                         {files.length > 0 ? "Add more files" : "Drop files here or click to upload"}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        Images, PDF, Word documents (max 10MB)
+                        Images, PDF, Word documents (max 30MB)
                       </span>
                     </>
                   )}
@@ -697,7 +800,7 @@ export function QuestionnaireInterface({
       <Toaster />
 
       {/* Header */}
-      <header className="border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
+      <header className="sticky top-0 z-50 border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
@@ -715,6 +818,27 @@ export function QuestionnaireInterface({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Auto-save status indicator */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              {saveStatus === "saving" && (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span className="hidden sm:inline">Saving...</span>
+                </>
+              )}
+              {saveStatus === "saved" && (
+                <>
+                  <Check className="h-3.5 w-3.5 text-green-500" />
+                  <span className="hidden sm:inline">Saved</span>
+                </>
+              )}
+              {saveStatus === "error" && (
+                <>
+                  <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                  <span className="hidden sm:inline">Error</span>
+                </>
+              )}
+            </div>
             <ThemeToggle />
             <Logo className="flex-shrink-0" />
           </div>
@@ -993,14 +1117,23 @@ export function QuestionnaireInterface({
             </>
           )}
 
-          {/* Submit Button */}
+          {/* Complete Button */}
           <div className="flex justify-end pt-4">
             <Button
-              onClick={handleSubmit}
-              disabled={isSubmitting || progress < 100}
+              onClick={handleComplete}
+              disabled={isSubmitting || progress < 100 || saveStatus === "saving"}
             >
-              <Send className="mr-2 h-4 w-4" />
-              {isSubmitting ? "Submitting..." : "Submit Responses"}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Completing...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Complete Questionnaire
+                </>
+              )}
             </Button>
           </div>
         </div>
