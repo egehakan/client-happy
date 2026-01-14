@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, initializeSchema } from "@/lib/db";
-import { requireAuth, userOwnsPage } from "@/lib/auth/api-auth";
+import { requireAuth, userOwnsAllPages } from "@/lib/auth/api-auth";
 
 const reorderPagesSchema = z.object({
   pageOrders: z.array(
@@ -30,12 +30,9 @@ export async function POST(request: Request) {
 
     const { pageOrders } = result.data;
 
-    // Verify ownership for all pages
-    const ownershipChecks = await Promise.all(
-      pageOrders.map((p) => userOwnsPage(session.user.id, p.id))
-    );
-
-    if (!ownershipChecks.every((owned) => owned)) {
+    // Verify ownership for all pages (single batch query)
+    const pageIds = pageOrders.map((p) => p.id);
+    if (!(await userOwnsAllPages(session.user.id, pageIds))) {
       return NextResponse.json(
         { error: "One or more pages not found or not owned" },
         { status: 404 }

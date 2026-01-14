@@ -91,3 +91,85 @@ export async function userOwnsQuestionGroup(userId: string, groupId: string): Pr
   });
   return result.rows.length > 0;
 }
+
+// BATCH OWNERSHIP CHECKS - Optimized for bulk operations
+
+// Check if user owns all screenshots (single query for multiple IDs)
+export async function userOwnsAllScreenshots(userId: string, screenshotIds: string[]): Promise<boolean> {
+  if (screenshotIds.length === 0) return true;
+
+  const placeholders = screenshotIds.map(() => "?").join(", ");
+
+  // Single query that checks both section-attached and page-attached screenshots
+  const result = await db.execute({
+    sql: `SELECT sc.id FROM screenshots sc
+          LEFT JOIN sections s ON sc.section_id = s.id
+          LEFT JOIN pages p ON sc.page_id = p.id OR s.page_id = p.id
+          JOIN projects pr ON p.project_id = pr.id
+          WHERE sc.id IN (${placeholders}) AND pr.user_id = ?`,
+    args: [...screenshotIds, userId],
+  });
+
+  return result.rows.length === screenshotIds.length;
+}
+
+// Check if user owns all pages (single query for multiple IDs)
+export async function userOwnsAllPages(userId: string, pageIds: string[]): Promise<boolean> {
+  if (pageIds.length === 0) return true;
+
+  const placeholders = pageIds.map(() => "?").join(", ");
+  const result = await db.execute({
+    sql: `SELECT p.id FROM pages p
+          JOIN projects pr ON p.project_id = pr.id
+          WHERE p.id IN (${placeholders}) AND pr.user_id = ?`,
+    args: [...pageIds, userId],
+  });
+
+  return result.rows.length === pageIds.length;
+}
+
+// Check if user owns all sections (single query for multiple IDs)
+export async function userOwnsAllSections(userId: string, sectionIds: string[]): Promise<boolean> {
+  if (sectionIds.length === 0) return true;
+
+  const placeholders = sectionIds.map(() => "?").join(", ");
+  const result = await db.execute({
+    sql: `SELECT s.id FROM sections s
+          JOIN pages p ON s.page_id = p.id
+          JOIN projects pr ON p.project_id = pr.id
+          WHERE s.id IN (${placeholders}) AND pr.user_id = ?`,
+    args: [...sectionIds, userId],
+  });
+
+  return result.rows.length === sectionIds.length;
+}
+
+// Check if user owns all questions (single query for multiple IDs)
+export async function userOwnsAllQuestions(userId: string, questionIds: string[]): Promise<boolean> {
+  if (questionIds.length === 0) return true;
+
+  const placeholders = questionIds.map(() => "?").join(", ");
+  const result = await db.execute({
+    sql: `SELECT q.id FROM questions q
+          JOIN projects p ON q.project_id = p.id
+          WHERE q.id IN (${placeholders}) AND p.user_id = ?`,
+    args: [...questionIds, userId],
+  });
+
+  return result.rows.length === questionIds.length;
+}
+
+// Check if user owns all question groups (single query for multiple IDs)
+export async function userOwnsAllQuestionGroups(userId: string, groupIds: string[]): Promise<boolean> {
+  if (groupIds.length === 0) return true;
+
+  const placeholders = groupIds.map(() => "?").join(", ");
+  const result = await db.execute({
+    sql: `SELECT qg.id FROM question_groups qg
+          JOIN projects p ON qg.project_id = p.id
+          WHERE qg.id IN (${placeholders}) AND p.user_id = ?`,
+    args: [...groupIds, userId],
+  });
+
+  return result.rows.length === groupIds.length;
+}

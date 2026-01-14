@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db, initializeSchema } from "@/lib/db";
 import { bulkCreateScreenshotsSchema } from "@/lib/validators";
 import { type ScreenshotRow, screenshotFromRow } from "@/types";
-import { requireAuth, userOwnsProject, userOwnsSection, userOwnsPage, userOwnsScreenshot } from "@/lib/auth/api-auth";
+import { requireAuth, userOwnsProject, userOwnsSection, userOwnsPage, userOwnsAllScreenshots } from "@/lib/auth/api-auth";
 
 const ALLOWED_TYPES = [
   "image/jpeg",
@@ -213,14 +213,12 @@ export async function DELETE(request: Request) {
 
     const { ids } = validationResult.data;
 
-    // Verify user owns all screenshots
-    for (const id of ids) {
-      if (!(await userOwnsScreenshot(session.user.id, id))) {
-        return NextResponse.json(
-          { error: `Screenshot not found: ${id}` },
-          { status: 404 }
-        );
-      }
+    // Verify user owns all screenshots (single batch query)
+    if (!(await userOwnsAllScreenshots(session.user.id, ids))) {
+      return NextResponse.json(
+        { error: "One or more screenshots not found or not owned" },
+        { status: 404 }
+      );
     }
 
     // Get all screenshots to delete their blob files

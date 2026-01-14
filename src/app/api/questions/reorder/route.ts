@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, initializeSchema } from "@/lib/db";
 import { reorderQuestionsSchema } from "@/lib/validators";
-import { requireAuth, userOwnsQuestion, userOwnsQuestionGroup } from "@/lib/auth/api-auth";
+import { requireAuth, userOwnsAllQuestions, userOwnsAllQuestionGroups } from "@/lib/auth/api-auth";
 
 export async function POST(request: Request) {
   const { session, error } = await requireAuth();
@@ -21,30 +21,22 @@ export async function POST(request: Request) {
 
     const { questionOrders } = result.data;
 
-    // Verify ownership for all questions
-    const ownershipChecks = await Promise.all(
-      questionOrders.map((q) => userOwnsQuestion(session.user.id, q.id))
-    );
-
-    if (!ownershipChecks.every((owned) => owned)) {
+    // Verify ownership for all questions (single batch query)
+    const questionIds = questionOrders.map((q) => q.id);
+    if (!(await userOwnsAllQuestions(session.user.id, questionIds))) {
       return NextResponse.json(
         { error: "One or more questions not found or not owned" },
         { status: 404 }
       );
     }
 
-    // Verify ownership for all group assignments
+    // Verify ownership for all group assignments (single batch query)
     const groupIds = [...new Set(questionOrders.map((q) => q.groupId).filter(Boolean))] as string[];
-    if (groupIds.length > 0) {
-      const groupOwnershipChecks = await Promise.all(
-        groupIds.map((id) => userOwnsQuestionGroup(session.user.id, id))
+    if (groupIds.length > 0 && !(await userOwnsAllQuestionGroups(session.user.id, groupIds))) {
+      return NextResponse.json(
+        { error: "One or more question groups not found or not owned" },
+        { status: 404 }
       );
-      if (!groupOwnershipChecks.every((owned) => owned)) {
-        return NextResponse.json(
-          { error: "One or more question groups not found or not owned" },
-          { status: 404 }
-        );
-      }
     }
 
     // Update all questions (handles sort order, group, and scope changes)

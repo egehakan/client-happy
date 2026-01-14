@@ -19,7 +19,7 @@ import { Logo } from "@/components/logo";
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: Home },
   { href: "/admin/projects", label: "Projects", icon: FolderOpen },
-  { href: "/admin/votes", label: "Votes", icon: BarChart3 },
+  { href: "/admin/responses", label: "Responses", icon: BarChart3 },
   { href: "/admin/account", label: "Account", icon: Settings },
 ];
 

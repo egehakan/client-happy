@@ -23,42 +23,60 @@ async function getProjectsWithStats(userId: string) {
   noStore();
   await initializeSchema();
 
-  const projectResult = await db.execute({
-    sql: "SELECT * FROM projects WHERE user_id = ? ORDER BY name",
-    args: [userId],
-  });
+  // OPTIMIZED: Fetch all data in parallel with batch queries (instead of N+1 queries)
+  const [projectResult, voteCountsResult, questionnaireCountsResult] = await Promise.all([
+    db.execute({
+      sql: "SELECT * FROM projects WHERE user_id = ? ORDER BY name",
+      args: [userId],
+    }),
+    // Get vote counts grouped by project (single query for all projects)
+    db.execute({
+      sql: `SELECT p.project_id, COUNT(*) as count FROM votes v
+            JOIN screenshots s ON v.screenshot_id = s.id
+            LEFT JOIN sections sec ON s.section_id = sec.id
+            LEFT JOIN pages p ON s.page_id = p.id OR sec.page_id = p.id
+            JOIN projects pr ON p.project_id = pr.id
+            WHERE pr.user_id = ?
+            GROUP BY p.project_id`,
+      args: [userId],
+    }),
+    // Get questionnaire response counts grouped by project (single query for all projects)
+    db.execute({
+      sql: `SELECT q.project_id, COUNT(DISTINCT qr.respondent_email) as count
+            FROM question_responses qr
+            JOIN questions q ON qr.question_id = q.id
+            JOIN projects pr ON q.project_id = pr.id
+            WHERE pr.user_id = ?
+            GROUP BY q.project_id`,
+      args: [userId],
+    }),
+  ]);
+
+  // Build lookup maps for O(1) access
+  const voteCountsByProject = new Map<string, number>();
+  for (const row of voteCountsResult.rows) {
+    const r = row as unknown as { project_id: string; count: number };
+    voteCountsByProject.set(r.project_id, Number(r.count));
+  }
+
+  const questionnaireCountsByProject = new Map<string, number>();
+  for (const row of questionnaireCountsResult.rows) {
+    const r = row as unknown as { project_id: string; count: number };
+    questionnaireCountsByProject.set(r.project_id, Number(r.count));
+  }
+
+  // Build result using maps
   const projectRows = projectResult.rows as unknown as ProjectRow[];
-
-  const projectsWithStats = await Promise.all(
-    projectRows.map(async (projectRow) => {
-      const project = projectFromRow(projectRow);
-
-      // Get vote count for this project
-      const voteResult = await db.execute({
-        sql: `SELECT COUNT(*) as count FROM votes v
-              JOIN screenshots s ON v.screenshot_id = s.id
-              JOIN sections sec ON s.section_id = sec.id
-              JOIN pages p ON sec.page_id = p.id
-              WHERE p.project_id = ?`,
-        args: [project.id],
-      });
-      const voteCount = Number(voteResult.rows[0]?.count || 0);
-
-      // Get questionnaire response count for this project
-      const questionnaireResult = await db.execute({
-        sql: `SELECT COUNT(DISTINCT respondent_email) as count FROM question_responses qr
-              JOIN questions q ON qr.question_id = q.id
-              WHERE q.project_id = ?`,
-        args: [project.id],
-      });
-      const questionnaireCount = Number(questionnaireResult.rows[0]?.count || 0);
-
-      return {
-        project,
-        stats: { voteCount, questionnaireCount } as ProjectStats,
-      };
-    })
-  );
+  const projectsWithStats = projectRows.map((projectRow) => {
+    const project = projectFromRow(projectRow);
+    return {
+      project,
+      stats: {
+        voteCount: voteCountsByProject.get(project.id) || 0,
+        questionnaireCount: questionnaireCountsByProject.get(project.id) || 0,
+      } as ProjectStats,
+    };
+  });
 
   return projectsWithStats;
 }

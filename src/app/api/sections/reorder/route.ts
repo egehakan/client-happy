@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, initializeSchema } from "@/lib/db";
-import { requireAuth, userOwnsSection } from "@/lib/auth/api-auth";
+import { requireAuth, userOwnsAllSections } from "@/lib/auth/api-auth";
 
 const reorderSectionsSchema = z.object({
   sectionOrders: z.array(
@@ -30,12 +30,9 @@ export async function POST(request: Request) {
 
     const { sectionOrders } = result.data;
 
-    // Verify ownership for all sections
-    const ownershipChecks = await Promise.all(
-      sectionOrders.map((s) => userOwnsSection(session.user.id, s.id))
-    );
-
-    if (!ownershipChecks.every((owned) => owned)) {
+    // Verify ownership for all sections (single batch query)
+    const sectionIds = sectionOrders.map((s) => s.id);
+    if (!(await userOwnsAllSections(session.user.id, sectionIds))) {
       return NextResponse.json(
         { error: "One or more sections not found or not owned" },
         { status: 404 }

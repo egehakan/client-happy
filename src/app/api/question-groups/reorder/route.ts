@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db, initializeSchema } from "@/lib/db";
-import { requireAuth, userOwnsQuestionGroup } from "@/lib/auth/api-auth";
+import { requireAuth, userOwnsAllQuestionGroups } from "@/lib/auth/api-auth";
 
 const reorderGroupsSchema = z.object({
   groupOrders: z.array(
@@ -30,12 +30,9 @@ export async function POST(request: Request) {
 
     const { groupOrders } = result.data;
 
-    // Verify ownership for all groups
-    const ownershipChecks = await Promise.all(
-      groupOrders.map((g) => userOwnsQuestionGroup(session.user.id, g.id))
-    );
-
-    if (!ownershipChecks.every((owned) => owned)) {
+    // Verify ownership for all groups (single batch query)
+    const groupIds = groupOrders.map((g) => g.id);
+    if (!(await userOwnsAllQuestionGroups(session.user.id, groupIds))) {
       return NextResponse.json(
         { error: "One or more groups not found or not owned" },
         { status: 404 }

@@ -66,175 +66,190 @@ async function getProjectResponseData(projectId: string, userId: string) {
 
   const project = projectFromRow(projectResult.rows[0] as unknown as ProjectRow);
 
-  // Get pages for this project
-  const pageResult = await db.execute({
-    sql: "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order",
-    args: [project.id],
-  });
-  const pageRows = pageResult.rows as unknown as PageRow[];
+  // OPTIMIZED: Fetch all data in parallel with batch queries (instead of N+1 queries)
+  const [
+    pagesResult,
+    sectionsResult,
+    screenshotsResult,
+    votesResult,
+    questionsResult,
+    questionGroupsResult,
+    responsesResult,
+  ] = await Promise.all([
+    // Get all pages for this project
+    db.execute({
+      sql: "SELECT * FROM pages WHERE project_id = ? ORDER BY sort_order",
+      args: [projectId],
+    }),
+    // Get all sections for this project (with page info)
+    db.execute({
+      sql: `SELECT s.*, p.name as page_name FROM sections s
+            JOIN pages p ON s.page_id = p.id
+            WHERE p.project_id = ?
+            ORDER BY s.sort_order`,
+      args: [projectId],
+    }),
+    // Get all screenshots for this project
+    db.execute({
+      sql: `SELECT sc.* FROM screenshots sc
+            LEFT JOIN sections s ON sc.section_id = s.id
+            LEFT JOIN pages p ON sc.page_id = p.id OR s.page_id = p.id
+            WHERE p.project_id = ?
+            ORDER BY sc.sort_order`,
+      args: [projectId],
+    }),
+    // Get all votes for all screenshots in this project (single query!)
+    db.execute({
+      sql: `SELECT v.* FROM votes v
+            JOIN screenshots sc ON v.screenshot_id = sc.id
+            LEFT JOIN sections s ON sc.section_id = s.id
+            LEFT JOIN pages p ON sc.page_id = p.id OR s.page_id = p.id
+            WHERE p.project_id = ?
+            ORDER BY v.created_at DESC`,
+      args: [projectId],
+    }),
+    // Get all questions
+    db.execute({
+      sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY scope_type, sort_order",
+      args: [projectId],
+    }),
+    // Get all question groups
+    db.execute({
+      sql: "SELECT * FROM question_groups WHERE project_id = ? ORDER BY sort_order",
+      args: [projectId],
+    }),
+    // Get all responses for all questions in this project (single query!)
+    db.execute({
+      sql: `SELECT qr.* FROM question_responses qr
+            JOIN questions q ON qr.question_id = q.id
+            WHERE q.project_id = ?
+            ORDER BY qr.updated_at DESC`,
+      args: [projectId],
+    }),
+  ]);
 
-  const pages: PageWithSections[] = [];
-  let totalVotes = 0;
+  // Process pages
+  const pageRows = pagesResult.rows as unknown as PageRow[];
+  const allPagesSorted = pageRows.map((row) => pageFromRow(row)).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Process sections and build maps
+  const pageMap = new Map<string, string>();
+  const sectionMap = new Map<string, { name: string; pageName: string }>();
+
+  for (const row of pageRows) {
+    const page = pageFromRow(row);
+    pageMap.set(page.id, page.name);
+  }
+
+  const allSectionsSorted = sectionsResult.rows
+    .map((row) => {
+      const section = sectionFromRow(row as unknown as SectionRow);
+      sectionMap.set(section.id, {
+        name: section.name,
+        pageName: (row as unknown as { page_name: string }).page_name,
+      });
+      return section;
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Process screenshots
+  const allScreenshots = screenshotsResult.rows.map((row) =>
+    screenshotFromRow(row as unknown as ScreenshotRow)
+  );
+
+  // Build a map of screenshot ID -> votes (process votes once)
+  const votesByScreenshot = new Map<string, ReturnType<typeof voteFromRow>[]>();
   const voteEmails = new Set<string>();
+  let totalVotes = 0;
 
-  for (const pageRow of pageRows) {
-    const page = pageFromRow(pageRow);
+  for (const row of votesResult.rows) {
+    const vote = voteFromRow(row as unknown as VoteRow);
+    totalVotes++;
+    if (vote.voterIdentifier) voteEmails.add(vote.voterIdentifier);
 
-    // Get sections for this page
-    const sectionResult = await db.execute({
-      sql: "SELECT * FROM sections WHERE page_id = ? ORDER BY sort_order",
-      args: [page.id],
-    });
-    const sectionRows = sectionResult.rows as unknown as SectionRow[];
+    const existing = votesByScreenshot.get(vote.screenshotId) || [];
+    existing.push(vote);
+    votesByScreenshot.set(vote.screenshotId, existing);
+  }
 
-    const sections: SectionWithScreenshots[] = [];
-
-    for (const sectionRow of sectionRows) {
-      const section = sectionFromRow(sectionRow);
-
-      // Get screenshots for this section
-      const screenshotResult = await db.execute({
-        sql: "SELECT * FROM screenshots WHERE section_id = ? ORDER BY sort_order",
-        args: [section.id],
-      });
-      const screenshotRows = screenshotResult.rows as unknown as ScreenshotRow[];
-
-      const screenshots: ScreenshotWithVotes[] = [];
-
-      for (const screenshotRow of screenshotRows) {
-        const screenshot = screenshotFromRow(screenshotRow);
-
-        // Get votes for this screenshot
-        const voteResult = await db.execute({
-          sql: "SELECT * FROM votes WHERE screenshot_id = ? ORDER BY created_at DESC",
-          args: [screenshot.id],
-        });
-        const voteRows = voteResult.rows as unknown as VoteRow[];
-
-        const votes = voteRows.map(voteFromRow);
-        totalVotes += votes.length;
-
-        // Collect unique voter emails
-        votes.forEach(v => {
-          if (v.voterIdentifier) voteEmails.add(v.voterIdentifier);
-        });
-
-        const summary = {
-          yes: votes.filter((v) => v.vote === "yes").length,
-          mid: votes.filter((v) => v.vote === "mid").length,
-          no: votes.filter((v) => v.vote === "no").length,
-          total: votes.length,
-        };
-
-        screenshots.push({ screenshot, votes, summary });
-      }
-
-      if (screenshots.length > 0) {
-        sections.push({ section, screenshots });
-      }
-    }
-
-    // Get page-level screenshots (screenshots directly on the page, not in a section)
-    const pageScreenshotsResult = await db.execute({
-      sql: "SELECT * FROM screenshots WHERE page_id = ? AND section_id IS NULL ORDER BY sort_order",
-      args: [page.id],
-    });
-    const pageScreenshotRows = pageScreenshotsResult.rows as unknown as ScreenshotRow[];
-
-    const pageScreenshots: ScreenshotWithVotes[] = [];
-
-    for (const screenshotRow of pageScreenshotRows) {
-      const screenshot = screenshotFromRow(screenshotRow);
-
-      // Get votes for this screenshot
-      const voteResult = await db.execute({
-        sql: "SELECT * FROM votes WHERE screenshot_id = ? ORDER BY created_at DESC",
-        args: [screenshot.id],
-      });
-      const voteRows = voteResult.rows as unknown as VoteRow[];
-
-      const votes = voteRows.map(voteFromRow);
-      totalVotes += votes.length;
-
-      // Collect unique voter emails
-      votes.forEach(v => {
-        if (v.voterIdentifier) voteEmails.add(v.voterIdentifier);
-      });
-
-      const summary = {
+  // Build screenshot data with votes
+  function buildScreenshotWithVotes(screenshot: ReturnType<typeof screenshotFromRow>): ScreenshotWithVotes {
+    const votes = votesByScreenshot.get(screenshot.id) || [];
+    return {
+      screenshot,
+      votes,
+      summary: {
         yes: votes.filter((v) => v.vote === "yes").length,
         mid: votes.filter((v) => v.vote === "mid").length,
         no: votes.filter((v) => v.vote === "no").length,
         total: votes.length,
-      };
+      },
+    };
+  }
 
-      pageScreenshots.push({ screenshot, votes, summary });
+  // Group screenshots by section and page
+  const screenshotsBySection = new Map<string, ScreenshotWithVotes[]>();
+  const screenshotsByPage = new Map<string, ScreenshotWithVotes[]>(); // page-level (no section)
+
+  for (const screenshot of allScreenshots) {
+    const screenshotWithVotes = buildScreenshotWithVotes(screenshot);
+
+    if (screenshot.sectionId) {
+      const existing = screenshotsBySection.get(screenshot.sectionId) || [];
+      existing.push(screenshotWithVotes);
+      screenshotsBySection.set(screenshot.sectionId, existing);
+    } else if (screenshot.pageId) {
+      const existing = screenshotsByPage.get(screenshot.pageId) || [];
+      existing.push(screenshotWithVotes);
+      screenshotsByPage.set(screenshot.pageId, existing);
     }
+  }
+
+  // Build sections by page
+  const sectionsByPage = new Map<string, SectionWithScreenshots[]>();
+  for (const section of allSectionsSorted) {
+    const screenshots = screenshotsBySection.get(section.id) || [];
+    if (screenshots.length > 0) {
+      const existing = sectionsByPage.get(section.pageId) || [];
+      existing.push({ section, screenshots });
+      sectionsByPage.set(section.pageId, existing);
+    }
+  }
+
+  // Build pages with sections
+  const pages: PageWithSections[] = [];
+  for (const page of allPagesSorted) {
+    const sections = sectionsByPage.get(page.id) || [];
+    const pageScreenshots = screenshotsByPage.get(page.id) || [];
 
     if (sections.length > 0 || pageScreenshots.length > 0) {
       pages.push({ page, sections, pageScreenshots });
     }
   }
 
-  // Get questions with responses
-  const questionsResult = await db.execute({
-    sql: "SELECT * FROM questions WHERE project_id = ? ORDER BY scope_type, sort_order",
-    args: [projectId],
-  });
-  const questionRows = questionsResult.rows as unknown as QuestionRow[];
-
-  // Get question groups
-  const questionGroupsResult = await db.execute({
-    sql: "SELECT * FROM question_groups WHERE project_id = ? ORDER BY sort_order",
-    args: [projectId],
-  });
+  // Process questions and responses
   const questionGroups = questionGroupsResult.rows.map((row) =>
     questionGroupFromRow(row as unknown as QuestionGroupRow)
   );
 
-  // Build page and section maps for scope names
-  const pageMap = new Map<string, string>();
-  const sectionMap = new Map<string, { name: string; pageName: string }>();
-
-  const allPagesResult = await db.execute({
-    sql: "SELECT * FROM pages WHERE project_id = ?",
-    args: [projectId],
-  });
-  for (const row of allPagesResult.rows) {
-    const page = pageFromRow(row as unknown as PageRow);
-    pageMap.set(page.id, page.name);
-  }
-
-  const allSectionsResult = await db.execute({
-    sql: `SELECT s.*, p.name as page_name FROM sections s
-          JOIN pages p ON s.page_id = p.id
-          WHERE p.project_id = ?`,
-    args: [projectId],
-  });
-  for (const row of allSectionsResult.rows) {
-    const section = sectionFromRow(row as unknown as SectionRow);
-    sectionMap.set(section.id, {
-      name: section.name,
-      pageName: (row as unknown as { page_name: string }).page_name,
-    });
-  }
-
+  // Build a map of question ID -> responses
+  const responsesByQuestion = new Map<string, ReturnType<typeof questionResponseFromRow>[]>();
   const respondentEmails = new Set<string>();
 
-  const questionsWithResponses: QuestionWithResponses[] = await Promise.all(
-    questionRows.map(async (questionRow) => {
+  for (const row of responsesResult.rows) {
+    const response = questionResponseFromRow(row as unknown as QuestionResponseRow);
+    respondentEmails.add(response.respondentEmail);
+
+    const existing = responsesByQuestion.get(response.questionId) || [];
+    existing.push(response);
+    responsesByQuestion.set(response.questionId, existing);
+  }
+
+  // Build questions with responses
+  const questionsWithResponses: QuestionWithResponses[] = (questionsResult.rows as unknown as QuestionRow[])
+    .map((questionRow) => {
       const question = questionFromRow(questionRow);
-
-      const responsesResult = await db.execute({
-        sql: "SELECT * FROM question_responses WHERE question_id = ? ORDER BY updated_at DESC",
-        args: [question.id],
-      });
-      const responses = responsesResult.rows.map((r) =>
-        questionResponseFromRow(r as unknown as QuestionResponseRow)
-      );
-
-      // Collect unique respondent emails
-      responses.forEach(r => respondentEmails.add(r.respondentEmail));
+      const responses = responsesByQuestion.get(question.id) || [];
 
       let scopeName = "Website";
       if (question.scopeType === "page" && question.scopeId) {
@@ -247,8 +262,7 @@ async function getProjectResponseData(projectId: string, userId: string) {
       }
 
       return { question, responses, scopeName };
-    })
-  );
+    });
 
   // Get unique respondents count
   const totalRespondents = respondentEmails.size;
@@ -256,21 +270,6 @@ async function getProjectResponseData(projectId: string, userId: string) {
   // Combine all unique emails from votes and questionnaire
   const allEmails = new Set([...voteEmails, ...respondentEmails]);
   const uniqueEmails = Array.from(allEmails).sort();
-
-  // Get all pages sorted for hierarchical display
-  const allPagesSorted = pageRows.map((row) => pageFromRow(row)).sort((a, b) => a.sortOrder - b.sortOrder);
-
-  // Get all sections sorted
-  const sectionsSortedResult = await db.execute({
-    sql: `SELECT s.* FROM sections s
-          JOIN pages p ON s.page_id = p.id
-          WHERE p.project_id = ?
-          ORDER BY s.sort_order`,
-    args: [projectId],
-  });
-  const allSectionsSorted = sectionsSortedResult.rows
-    .map((row) => sectionFromRow(row as unknown as SectionRow))
-    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   return {
     project,

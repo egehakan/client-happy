@@ -17,29 +17,30 @@ async function getStats(userId: string): Promise<Stats> {
   noStore();
   await initializeSchema();
 
-  const projectResult = await db.execute({
-    sql: "SELECT COUNT(*) as count FROM projects WHERE user_id = ?",
-    args: [userId],
-  });
-
-  const screenshotResult = await db.execute({
-    sql: `SELECT COUNT(*) as count FROM screenshots s
-          JOIN sections sec ON s.section_id = sec.id
-          JOIN pages p ON sec.page_id = p.id
-          JOIN projects pr ON p.project_id = pr.id
-          WHERE pr.user_id = ?`,
-    args: [userId],
-  });
-
-  const voteResult = await db.execute({
-    sql: `SELECT COUNT(*) as count FROM votes v
-          JOIN screenshots s ON v.screenshot_id = s.id
-          JOIN sections sec ON s.section_id = sec.id
-          JOIN pages p ON sec.page_id = p.id
-          JOIN projects pr ON p.project_id = pr.id
-          WHERE pr.user_id = ?`,
-    args: [userId],
-  });
+  // OPTIMIZED: Run all stats queries in parallel
+  const [projectResult, screenshotResult, voteResult] = await Promise.all([
+    db.execute({
+      sql: "SELECT COUNT(*) as count FROM projects WHERE user_id = ?",
+      args: [userId],
+    }),
+    db.execute({
+      sql: `SELECT COUNT(*) as count FROM screenshots s
+            LEFT JOIN sections sec ON s.section_id = sec.id
+            LEFT JOIN pages p ON s.page_id = p.id OR sec.page_id = p.id
+            JOIN projects pr ON p.project_id = pr.id
+            WHERE pr.user_id = ?`,
+      args: [userId],
+    }),
+    db.execute({
+      sql: `SELECT COUNT(*) as count FROM votes v
+            JOIN screenshots s ON v.screenshot_id = s.id
+            LEFT JOIN sections sec ON s.section_id = sec.id
+            LEFT JOIN pages p ON s.page_id = p.id OR sec.page_id = p.id
+            JOIN projects pr ON p.project_id = pr.id
+            WHERE pr.user_id = ?`,
+      args: [userId],
+    }),
+  ]);
 
   return {
     projectCount: (projectResult.rows[0] as unknown as { count: number }).count,
@@ -113,8 +114,8 @@ export default async function AdminDashboard() {
           <Link href="/admin/projects" className="w-full sm:w-auto">
             <Button variant="outline" className="w-full sm:w-auto">View All Projects</Button>
           </Link>
-          <Link href="/admin/votes" className="w-full sm:w-auto">
-            <Button variant="outline" className="w-full sm:w-auto">View Vote Analytics</Button>
+          <Link href="/admin/responses" className="w-full sm:w-auto">
+            <Button variant="outline" className="w-full sm:w-auto">View Responses</Button>
           </Link>
         </div>
       </div>
