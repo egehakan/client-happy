@@ -50,9 +50,12 @@ import {
   Globe,
   Layout,
   Folder,
+  Download,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ResetVotesButton } from "@/components/admin/reset-votes-button";
 import { ResetQuestionnaireButton } from "@/components/admin/reset-questionnaire-button";
+import { exportVotesZip, exportQuestionnaireZip } from "@/lib/export-csv";
 
 interface Screenshot {
   id: string;
@@ -486,6 +489,7 @@ export function ResponsesFilter({
   allSections,
 }: ResponsesFilterProps) {
   const [filterEmail, setFilterEmail] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState<"votes" | "questionnaire" | null>(null);
 
   // Helper to get questions for a group (sorted by sortOrder)
   function getQuestionsForGroup(
@@ -589,6 +593,27 @@ export function ResponsesFilter({
     };
   }, [filterEmail, pages, questionsWithResponses, totalRespondents, totalVotes]);
 
+  async function handleExportVotes() {
+    setIsExporting("votes");
+    try {
+      await exportVotesZip(filteredData.pages, project.name);
+    } finally {
+      setIsExporting(null);
+    }
+  }
+
+  async function handleExportQuestionnaire() {
+    setIsExporting("questionnaire");
+    try {
+      await exportQuestionnaireZip(
+        filteredData.questionsWithResponses,
+        project.name
+      );
+    } finally {
+      setIsExporting(null);
+    }
+  }
+
   // Group questions by scope
   const websiteQuestions = filteredData.questionsWithResponses.filter(
     (q) => q.question.scopeType === "website"
@@ -676,13 +701,28 @@ export function ResponsesFilter({
                       {filterEmail ? ` from ${filterEmail}` : " across all screenshots"}
                     </CardDescription>
                   </div>
-                  {!filterEmail && (
-                    <ResetVotesButton
-                      projectId={project.id}
-                      projectName={project.name}
-                      voteCount={totalVotes}
-                    />
-                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportVotes}
+                      disabled={filteredData.totalVotes === 0 || isExporting !== null}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      {isExporting === "votes"
+                        ? "Exporting..."
+                        : filterEmail
+                          ? "Export Filtered ZIP"
+                          : "Export ZIP"}
+                    </Button>
+                    {!filterEmail && (
+                      <ResetVotesButton
+                        projectId={project.id}
+                        projectName={project.name}
+                        voteCount={totalVotes}
+                      />
+                    )}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -760,13 +800,28 @@ export function ResponsesFilter({
                           : `${totalRespondents} unique respondent${totalRespondents !== 1 ? "s" : ""} across ${questionsWithResponses.length} question${questionsWithResponses.length !== 1 ? "s" : ""}`}
                       </CardDescription>
                     </div>
-                    {!filterEmail && totalRespondents > 0 && (
-                      <ResetQuestionnaireButton
-                        projectId={project.id}
-                        projectName={project.name}
-                        responseCount={totalRespondents}
-                      />
-                    )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportQuestionnaire}
+                        disabled={filteredData.questionsWithResponses.length === 0 || isExporting !== null}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        {isExporting === "questionnaire"
+                          ? "Exporting..."
+                          : filterEmail
+                            ? "Export Filtered ZIP"
+                            : "Export ZIP"}
+                      </Button>
+                      {!filterEmail && totalRespondents > 0 && (
+                        <ResetQuestionnaireButton
+                          projectId={project.id}
+                          projectName={project.name}
+                          responseCount={totalRespondents}
+                        />
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
               </Card>
