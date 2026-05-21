@@ -55,10 +55,11 @@
   Follow Next.js docs for Data Fetching, Rendering, and Routing.
 
 Project-Specific Instructions
-This is a local-only client style understanding tool. Key points:
-- Database: Turso
-- NOT deployed - runs locally on Mac only
-- File uploads stored in public/uploads/[project-id]/
+This is ClientHappy, a structured client-feedback tool. Key points:
+- Live app: https://app.clienthappy.com
+- Landing page: https://clienthappy.com (separate repo: client-happy-landing)
+- Database: Turso (libSQL)
+- File storage: Vercel Blob (uploads no longer go to public/uploads/)
 - Routes: /admin/* for management, /projects/[slug] for client voting
 - Entities: Projects -> Pages -> Sections -> Screenshots -> Votes
 - Use nanoid for generating IDs

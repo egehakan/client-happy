@@ -1,5 +1,7 @@
 # ClientHappy
 
+**Live app:** [app.clienthappy.com](https://app.clienthappy.com) · **Landing page:** [clienthappy.com](https://clienthappy.com)
+
 A structured feedback tool for agencies, freelancers, and product teams. Share a link with a client and let them vote Yes / Maybe / No on screenshots and answer questionnaires about their preferences — instead of chasing scattered comments across email, chat, and calls.
 
 > **License:** Source-available under [PolyForm Noncommercial 1.0.0](./LICENSE.md). You can read, fork, run, and modify this for personal, research, educational, and non-profit use. **Commercial use — including running it as a paid service or as part of a commercial offering — is not permitted.** See the LICENSE for full terms.
